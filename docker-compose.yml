@@ -1,0 +1,44 @@
+services:
+  mongodb:
+    image: mongo:7
+    container_name: vi-mongodb
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    ports:
+      - "127.0.0.1:${MONGO_HOST_PORT:-27018}:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "quit(db.adminCommand('ping').ok ? 0 : 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - vi_network
+
+  vi-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vi-app
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      MONGO_URI: ${MONGO_URI:-mongodb://mongodb:27017}
+      MONGO_DB_NAME: ${MONGO_DB_NAME:-vi_db}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - vi_network
+
+volumes:
+  mongo_data:
+
+networks:
+  vi_network:
+    driver: bridge

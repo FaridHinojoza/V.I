@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Iniciar sesión — V.I Sistema de Vigilancia Inteligente</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+  <header class="top-nav">
+    <span class="brand"><span class="brand-mark">V.I</span><span class="brand-sep">|</span>Sistema de Vigilancia Inteligente</span>
+  </header>
+
+  <main class="auth-main">
+    <section class="auth-card" aria-labelledby="login-title">
+      <div class="auth-card-head">
+        <h1 class="auth-title" id="login-title">Bienvenido</h1>
+      </div>
+
+      <div class="auth-card-body">
+        <form id="login-form" class="form-stack" novalidate autocomplete="off">
+          <div id="login-alert" class="alert alert-error" role="alert" aria-live="assertive" hidden>
+            <p class="alert-heading" id="login-alert-title">Credenciales inválidas o sesión única ya activa.</p>
+            <p class="alert-text" id="login-alert-text">Verifique su usuario y contraseña e intente nuevamente.</p>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="usuario">Usuario *</label>
+            <input class="text-input" type="text" id="usuario" name="usuario" placeholder="Ingrese su usuario" maxlength="50" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+            <p class="field-error" id="usuario-error" hidden></p>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="clave">Contraseña *</label>
+            <div class="password-wrap">
+              <input class="text-input" type="password" id="clave" name="clave" placeholder="Ingrese su contraseña" maxlength="72" autocomplete="current-password" required>
+              <button class="password-toggle" type="button" data-toggle-password="clave" aria-controls="clave" aria-label="Mostrar contraseña">Mostrar</button>
+            </div>
+            <p class="field-error" id="clave-error" hidden></p>
+          </div>
+
+          <button class="btn btn-primary btn-block" type="submit" id="login-submit">INICIAR SESIÓN</button>
+
+          <hr class="divider">
+
+          <div class="action-row">
+            <a class="btn btn-secondary" href="/recuperar">¿Olvidó su contraseña?</a>
+          </div>
+        </form>
+      </div>
+
+      <p class="auth-card-foot">* Campos obligatorios. Al cerrar el navegador la sesión expira.</p>
+    </section>
+  </main>
+
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/login.js"></script>
+</body>
+</html>

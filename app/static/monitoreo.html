@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Monitoreo en Vivo — V.I Sistema de Vigilancia Inteligente</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+  <header class="top-nav">
+    <span class="brand"><span class="brand-mark">V.I</span><span class="brand-sep">|</span>Sistema de Vigilancia Inteligente</span>
+    <button class="btn btn-secondary" type="button" id="logout-button">Cerrar Sesión</button>
+  </header>
+
+  <nav class="tabs-bar" aria-label="Navegación principal">
+    <button class="tab tab-active" type="button" aria-current="page">Monitoreo en Vivo</button>
+    <button class="tab" type="button" disabled>Modo Evaluación</button>
+    <button class="tab" type="button" disabled>Historial y Reportes</button>
+  </nav>
+
+  <main class="monitor-main">
+    <div class="monitor-col">
+      <section class="panel" aria-labelledby="camara-title">
+        <div class="panel-head">
+          <h2 class="panel-title" id="camara-title">CÁMARA EN TIEMPO REAL</h2>
+          <span class="badge-pill" id="camara-estado">Cámara desconectada</span>
+        </div>
+        <div class="panel-body">
+          <div class="video-stage">
+            <h3 class="stage-title">Cámara en espera</h3>
+            <p class="stage-text">Presione Iniciar Cámara para conectar la transmisión en vivo.</p>
+          </div>
+        </div>
+      </section>
+
+      <div class="control-bar">
+        <button class="btn btn-primary" type="button" id="iniciar-camara">Iniciar Cámara</button>
+        <button class="btn btn-secondary" type="button" disabled>Dibujar Cerco</button>
+        <button class="btn btn-secondary" type="button" disabled>Limpiar Cerco</button>
+      </div>
+
+      <div class="metrics" role="group" aria-label="Métricas operativas">
+        <div class="metric"><span class="metric-label">Velocidad</span><span class="metric-value">-- FPS</span></div>
+        <div class="metric"><span class="metric-label">Inferencia</span><span class="metric-value">-- ms</span></div>
+        <div class="metric"><span class="metric-label">Área Cerco</span><span class="metric-value">-- %</span></div>
+        <div class="metric"><span class="metric-label">CPU</span><span class="metric-value">-- %</span></div>
+        <div class="metric"><span class="metric-label">RAM</span><span class="metric-value">-- MB</span></div>
+        <div class="metric"><span class="metric-label">Peatones / Alertas</span><span class="metric-value">0 / 0</span></div>
+      </div>
+    </div>
+
+    <div class="monitor-col">
+      <section class="panel" aria-labelledby="umbrales-title">
+        <div class="panel-head">
+          <h2 class="panel-title" id="umbrales-title">AJUSTE DE UMBRALES</h2>
+        </div>
+        <div class="panel-body">
+          <div class="slider-group">
+            <label class="slider-label" for="umbral-tiempo">Tiempo de permanencia: <span id="umbral-tiempo-valor">15 s</span></label>
+            <input class="slider" type="range" id="umbral-tiempo" min="5" max="60" step="1" value="15">
+            <div class="slider-scale"><span>5 s</span><span>60 s</span></div>
+          </div>
+
+          <div class="slider-group">
+            <label class="slider-label" for="umbral-trayectoria">Trayectoria recurrente: <span id="umbral-trayectoria-valor">Media</span></label>
+            <input class="slider" type="range" id="umbral-trayectoria" min="1" max="3" step="1" value="2">
+            <div class="slider-scale"><span>Baja</span><span>Media</span><span>Alta</span></div>
+          </div>
+
+          <button class="btn btn-primary btn-block" type="button" id="aplicar-umbrales" disabled>APLICAR UMBRALES</button>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="alertas-title">
+        <div class="panel-head">
+          <h2 class="panel-title" id="alertas-title">ALERTAS EN TIEMPO REAL</h2>
+        </div>
+        <div class="panel-body">
+          <div class="empty-state">
+            <strong>Sin alertas registradas</strong>
+            <span>en la sesión actual.</span>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/monitoreo.js"></script>
+</body>
+</html>
