@@ -1,0 +1,1 @@
+"""Patron Strategy de procesamiento espacial: EstrategiaCercoVirtual (padding RNF-02 + imgsz dinamico) y EstrategiaEscenaCompleta."""

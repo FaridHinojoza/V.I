@@ -1,0 +1,1 @@
+"""Configuracion centralizada del sistema V.I cargada desde variables de entorno."""

@@ -1,6 +1,20 @@
-fastapi==0.165.0
-uvicorn==0.54.0
-pymongo==4.20.0
-bcrypt==5.0.0
-PyJWT==2.15.1
-pydantic==2.14.3
+# Framework Web y WebSockets
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+pydantic-settings==2.7.1
+
+# Vision Artificial y Seguimiento (CPU-only; torch CPU se instala desde el indice CPU en Dockerfile)
+ultralytics==8.3.55
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
+
+# Telemetria CPU y RAM
+psutil==6.1.1
+
+# Seguridad y Autenticacion
+bcrypt==4.2.1
+PyJWT==2.10.1
+
+# Base de Datos en la Nube
+pymongo==4.10.1

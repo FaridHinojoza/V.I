@@ -1,0 +1,1 @@
+"""Punto de entrada de FastAPI: lifespan (Singleton YOLO, MongoClient, ThreadPool) y montaje de estaticos."""

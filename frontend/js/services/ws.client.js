@@ -1,0 +1,1 @@
+// Cliente WebSocket para /ws/monitoreo con envio binario JPEG y control de backpressure (1 frame en vuelo).

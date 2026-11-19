@@ -1,33 +1,25 @@
-# Environment & secrets
-.env
-.env.*
-!.env.example
-
-# Python bytecode & caches
+# Entornos virtuales y cache de Python
+.venv/
+venv/
 __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
-.mypy_cache/
-.ruff_cache/
 
-# Virtual environments
-.venv/
-venv/
-env/
+# Variables de entorno y secretos
+.env
+.env.local
 
-# Coverage & logs
-.coverage
-htmlcov/
-*.log
-logs/
+# Pesos descargados localmente y videos temporales
+models/*.pt
+models/*.onnx
+*.mp4
+*.avi
+*.mkv
+tmp/
 
-# IDE & OS artifacts
+# IDE y sistema operativo
 .vscode/
 .idea/
-*.swp
 .DS_Store
 Thumbs.db
-
-# Local agent metadata (if ever present)
-.agents/

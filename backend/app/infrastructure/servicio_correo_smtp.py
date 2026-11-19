@@ -1,0 +1,1 @@
+"""Adaptador SMTP para envio del codigo temporal de recuperacion de contrasena."""

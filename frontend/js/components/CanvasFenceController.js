@@ -1,0 +1,1 @@
+// Controlador HTML5 Canvas: video/fotograma, poligono de 4 a 6 vertices normalizados [0..1] y arrastre en vivo.

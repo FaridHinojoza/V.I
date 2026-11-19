@@ -1,0 +1,1 @@
+"""Puertos (Protocol) del dominio: IRepositorioDatos, IDetectorPeatones e IServicioCorreo."""

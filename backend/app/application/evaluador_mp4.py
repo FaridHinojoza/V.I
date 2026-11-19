@@ -1,0 +1,1 @@
+"""Caso de uso EvaluadorExperimentalMP4: comparativa dual secuencial Con Cerco vs Escena Completa."""

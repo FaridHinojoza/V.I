@@ -1,0 +1,1 @@
+// Cliente HTTP fetch con inyeccion de Bearer JWT desde sessionStorage y manejo de errores 401.

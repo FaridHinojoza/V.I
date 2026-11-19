@@ -1,0 +1,1 @@
+"""Monitor de telemetria del proceso con psutil (% CPU, MB RAM) y cronometraje perf_counter."""

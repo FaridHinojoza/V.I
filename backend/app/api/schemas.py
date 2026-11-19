@@ -1,0 +1,1 @@
+"""Esquemas Pydantic para peticiones/respuestas HTTP REST y mensajes JSON del WebSocket."""
