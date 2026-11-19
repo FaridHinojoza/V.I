@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recuperar contraseña — V.I Sistema de Vigilancia Inteligente</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+  <header class="top-nav">
+    <span class="brand"><span class="brand-mark">V.I</span><span class="brand-sep">|</span>Sistema de Vigilancia Inteligente</span>
+  </header>
+
+  <main class="auth-main">
+    <section class="auth-card" aria-labelledby="recuperar-title">
+      <div class="auth-card-head">
+        <h1 class="auth-title" id="recuperar-title">Recuperar contraseña</h1>
+      </div>
+
+      <div class="auth-card-body">
+        <ol class="steps" aria-label="Pasos de recuperación">
+          <li class="step step-active" id="step-indicator-1" aria-current="step">1. Verificar correo</li>
+          <li class="step" id="step-indicator-2">2. Nueva contraseña</li>
+        </ol>
+
+        <form id="paso-1" class="form-stack" novalidate autocomplete="off">
+          <div id="paso1-alert" class="alert alert-error" role="alert" aria-live="assertive" hidden>
+            <p class="alert-heading" id="paso1-alert-title"></p>
+            <p class="alert-text" id="paso1-alert-text"></p>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="correo">Correo electrónico registrado *</label>
+            <input class="text-input" type="email" id="correo" name="correo" placeholder="Ingrese su correo electrónico" maxlength="120" autocomplete="email" autocapitalize="none" spellcheck="false" required>
+            <p class="field-error" id="correo-error" hidden></p>
+          </div>
+
+          <button class="btn btn-primary btn-block" type="submit" id="paso1-submit">ENVIAR CÓDIGO DE VERIFICACIÓN</button>
+
+          <hr class="divider">
+
+          <div class="action-row">
+            <a class="btn btn-secondary" href="/login">Volver al Inicio de Sesión</a>
+          </div>
+
+          <p class="auth-card-foot">* Campos obligatorios. Recibirá un código temporal de 6 dígitos.</p>
+        </form>
+
+        <form id="paso-2" class="form-stack" novalidate autocomplete="off" hidden>
+          <div id="paso2-aviso" class="alert alert-success" role="status" aria-live="polite">
+            <p class="alert-heading" id="paso2-aviso-title">Código enviado al correo <span id="correo-destino"></span></p>
+            <p class="alert-text">Ingrese el código temporal y defina su nueva contraseña.</p>
+          </div>
+
+          <div id="paso2-alert" class="alert alert-error" role="alert" aria-live="assertive" hidden>
+            <p class="alert-heading" id="paso2-alert-title"></p>
+            <p class="alert-text" id="paso2-alert-text"></p>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="codigo">Código temporal *</label>
+            <input class="text-input" type="text" id="codigo" name="codigo" placeholder="Ingrese el código de 6 dígitos" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required>
+            <p class="field-error" id="codigo-error" hidden></p>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="nueva-clave">Nueva contraseña *</label>
+            <div class="password-wrap">
+              <input class="text-input" type="password" id="nueva-clave" name="nueva_clave" placeholder="Ingrese la nueva contraseña" maxlength="72" autocomplete="new-password" required>
+              <button class="password-toggle" type="button" data-toggle-password="nueva-clave" aria-controls="nueva-clave" aria-label="Mostrar nueva contraseña">Mostrar</button>
+            </div>
+            <p class="field-error" id="nueva-clave-error" hidden></p>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="confirmar-clave">Confirmar nueva contraseña *</label>
+            <div class="password-wrap">
+              <input class="text-input" type="password" id="confirmar-clave" name="confirmar_clave" placeholder="Repita la nueva contraseña" maxlength="72" autocomplete="new-password" required>
+              <button class="password-toggle" type="button" data-toggle-password="confirmar-clave" aria-controls="confirmar-clave" aria-label="Mostrar confirmación de contraseña">Mostrar</button>
+            </div>
+            <p class="field-error" id="confirmar-clave-error" hidden></p>
+          </div>
+
+          <button class="btn btn-primary btn-block" type="submit" id="paso2-submit">ACTUALIZAR CONTRASEÑA</button>
+
+          <div class="action-row-split">
+            <button class="btn btn-secondary" type="button" id="reenviar-codigo">Reenviar código</button>
+            <a class="btn btn-secondary" href="/login">Volver al Inicio de Sesión</a>
+          </div>
+
+          <p class="auth-card-foot">* Campos obligatorios. Ambas contraseñas deben coincidir.</p>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/recuperar.js"></script>
+</body>
+</html>
