@@ -1,0 +1,1 @@
+"""Entidad de dominio EventoAlertaMerodeo: metadatos del incidente y evidencia fotografica .jpg."""

@@ -1,0 +1,1 @@
+"""Script idempotente para inicializar la cuenta unica del sistema V.I en MongoDB Atlas."""

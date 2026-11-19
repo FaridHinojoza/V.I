@@ -1,0 +1,1 @@
+"""Adaptador RepositorioMongoDBAtlas con PyMongo para las colecciones usuarios, alertas y evaluaciones."""

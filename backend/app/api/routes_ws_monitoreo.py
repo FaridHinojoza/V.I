@@ -1,0 +1,1 @@
+"""Canal WebSocket /ws/monitoreo: flujo de camara en tiempo real, cerco de 4 a 6 vertices, umbrales y alertas."""

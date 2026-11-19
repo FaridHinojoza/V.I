@@ -1,0 +1,1 @@
+"""Entidad CercoVirtualEnMemoria: poligono de 4 a 6 vertices en sesion, % de area, Point-in-Polygon y EstadoCerco."""

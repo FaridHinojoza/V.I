@@ -1,0 +1,1 @@
+"""Adaptador Singleton de Ultralytics YOLO operando sobre CPU y RAM (solo clase persona)."""

@@ -1,0 +1,1 @@
+// Pantalla 4: visor emergente ampliado de captura fotografica .jpg y descarga directa.

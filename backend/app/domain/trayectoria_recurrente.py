@@ -1,0 +1,1 @@
+"""Analizador de trayectorias recurrentes por track_id: filtrado espacial, indice de rectitud y revisitas en grilla."""

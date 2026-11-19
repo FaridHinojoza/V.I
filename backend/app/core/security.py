@@ -1,0 +1,1 @@
+"""Utilidades de seguridad: encriptacion Bcrypt y generacion/validacion PyJWT de sesion unica."""

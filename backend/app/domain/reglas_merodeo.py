@@ -1,0 +1,1 @@
+"""Evaluador de reglas de merodeo: tiempo de permanencia, integracion con trayectoria recurrente y estados Verde/Amarillo/Rojo."""

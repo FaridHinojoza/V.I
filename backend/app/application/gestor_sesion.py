@@ -1,0 +1,1 @@
+"""Caso de uso GestorSesionUnica: inicio de sesion no recurrente, cierre y recuperacion de contrasena en 2 pasos."""

@@ -1,0 +1,1 @@
+"""Rutas REST de consulta y exportacion: /api/alertas, /api/reportes/exportar y /api/health."""

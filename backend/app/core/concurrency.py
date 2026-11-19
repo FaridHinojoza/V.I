@@ -1,0 +1,1 @@
+"""Gestion de concurrencia en CPU: ThreadPoolExecutor dedicado de vision y compute_lock."""
