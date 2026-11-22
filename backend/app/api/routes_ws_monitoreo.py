@@ -1,7 +1,8 @@
-"""Router y controlador WebSocket para Monitoreo en Vivo (US-02 / RF-03).
+"""Router y controlador WebSocket para Monitoreo en Vivo (US-02 / US-03 / RF-03 / RF-04 / RF-05 / RF-06).
 
 Gobierna el canal bidireccional /ws/monitoreo con autenticación obligatoria
-por token JWT, handshake de estado de cámara y envío de telemetría base.
+por token JWT, handshake de estado de cámara, ciclo de vida del cerco virtual en memoria
+y emisión de telemetría operativa.
 """
 
 from __future__ import annotations
@@ -14,6 +15,11 @@ from typing import Any, Optional
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
 
 from backend.app.application.gestor_sesion import GestorSesionUnica
+from backend.app.domain.cerco_virtual import (
+    CercoInvalidoError,
+    CercoVirtualEnMemoria,
+    EstadoCerco,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,15 +29,7 @@ router = APIRouter(tags=["Monitoreo en Vivo"])
 async def _validar_sesion_ws(
     websocket: WebSocket, token: Optional[str]
 ) -> Optional[dict[str, Any]]:
-    """Valida el token JWT de la sesión única recibido por query param o encabezado.
-
-    Args:
-        websocket: Instancia de la conexión WebSocket entrante.
-        token: Cadena con el token JWT obtenido del parámetro de consulta.
-
-    Returns:
-        Diccionario con el payload verificado de la sesión, o None si es inválido.
-    """
+    """Valida el token JWT de la sesión única recibido por query param o encabezado."""
     if not token or not token.strip():
         await websocket.close(
             code=status.WS_1008_POLICY_VIOLATION,
@@ -66,16 +64,10 @@ async def websocket_monitoreo(
     websocket: WebSocket,
     token: Optional[str] = Query(default=None),
 ) -> None:
-    """Canal WebSocket en tiempo real para Monitoreo en Vivo (RF-03 / CP-02).
+    """Canal WebSocket en tiempo real para Monitoreo en Vivo (RF-03 / RF-04 / RF-05 / RF-06 / CP-02 / CP-03).
 
-    Establece la comunicación bidireccional para señalización de cámara conectada,
-    confirmación de estados y telemetría operativa inicial.
-
-    Args:
-        websocket: Objeto WebSocket de FastAPI.
-        token: Token JWT de sesión única enviado en la consulta ws://.../ws/monitoreo?token=...
+    Mantiene en memoria el cerco virtual activo durante la conexión sin persistencia en base de datos.
     """
-    # 1. Validar autenticación antes de aceptar el handshake
     sesion = await _validar_sesion_ws(websocket, token)
     if sesion is None:
         return
@@ -84,7 +76,10 @@ async def websocket_monitoreo(
     usuario = sesion.get("usuario", "operador")
     logger.info("Canal WebSocket /ws/monitoreo abierto para el usuario: %s", usuario)
 
-    # 2. Enviar mensaje de bienvenida y estado inicial de telemetría (RF-11)
+    # Cerco virtual dinámico efímero en memoria (RNF-04 / cero persistencia en BD)
+    cerco_activo = CercoVirtualEnMemoria()
+
+    # Enviar mensaje de bienvenida y telemetría inicial
     await websocket.send_json(
         {
             "tipo": "conexion_establecida",
@@ -104,7 +99,6 @@ async def websocket_monitoreo(
 
     try:
         while True:
-            # Escucha continua de mensajes enviados desde el cliente web
             mensaje_raw = await websocket.receive_text()
             try:
                 data = json.loads(mensaje_raw)
@@ -117,7 +111,6 @@ async def websocket_monitoreo(
             tipo_mensaje = data.get("tipo")
 
             if tipo_mensaje == "ping":
-                # Heartbeat para evitar timeout de conexión del navegador
                 await websocket.send_json(
                     {
                         "tipo": "pong",
@@ -126,7 +119,6 @@ async def websocket_monitoreo(
                 )
 
             elif tipo_mensaje == "camara_estado":
-                # Señalización de inicio o detención del flujo de la cámara en vivo
                 estado = data.get("estado", "desconectada")
                 logger.info("Estado de cámara reportado por el cliente: %s", estado)
                 await websocket.send_json(
@@ -137,8 +129,52 @@ async def websocket_monitoreo(
                     }
                 )
 
+            elif tipo_mensaje == "cerco_actualizado":
+                # Definición o reajuste dinámico del cerco de 4 a 6 vértices (RF-04 / RF-05 / RF-06 / CP-03)
+                raw_vertices = data.get("vertices", [])
+                try:
+                    cerco_activo.definir_vertices(raw_vertices)
+                    area_pct = cerco_activo.calcular_porcentaje_area()
+                    logger.info(
+                        "Cerco virtual actualizado en memoria: %d vértices, %.2f%% de área",
+                        cerco_activo.cantidad_vertices,
+                        area_pct,
+                    )
+                    await websocket.send_json(
+                        {
+                            "tipo": "cerco_confirmado",
+                            "cantidad_vertices": cerco_activo.cantidad_vertices,
+                            "area_cerco_pct": area_pct,
+                            "estado": cerco_activo.estado.value,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
+                    )
+                except CercoInvalidoError as err:
+                    logger.warning("Intento de trazado de cerco inválido rechazado: %s", err)
+                    await websocket.send_json(
+                        {
+                            "tipo": "error_cerco",
+                            "mensaje": str(err),
+                            "cantidad_vertices_recibidos": len(raw_vertices)
+                            if isinstance(raw_vertices, list)
+                            else 0,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
+                    )
+
+            elif tipo_mensaje == "limpiar_cerco":
+                # Limpieza del lienzo en caliente (RF-06)
+                cerco_activo.limpiar()
+                logger.info("Cerco virtual limpiado en memoria de sesión activa.")
+                await websocket.send_json(
+                    {
+                        "tipo": "cerco_limpiado",
+                        "area_cerco_pct": 0.0,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
+
             else:
-                # Responder confirmación para mensajes genéricos
                 await websocket.send_json(
                     {
                         "tipo": "ack",

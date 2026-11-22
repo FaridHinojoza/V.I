@@ -22,7 +22,10 @@
     <div class="monitor-col">
       <section class="panel" aria-labelledby="camara-title">
         <div class="panel-head">
-          <h2 class="panel-title" id="camara-title">CÁMARA EN TIEMPO REAL</h2>
+          <div class="panel-head-left">
+            <h2 class="panel-title" id="camara-title">CÁMARA EN TIEMPO REAL</h2>
+            <span class="badge-cerco-info" id="cerco-vertices-badge" style="display: none;">0 / 6 vértices</span>
+          </div>
           <span class="badge-pill" id="camara-estado">Cámara desconectada</span>
         </div>
         <div class="panel-body">
@@ -40,7 +43,10 @@
       <div class="control-bar">
         <button class="btn btn-primary" type="button" id="iniciar-camara">Iniciar Cámara</button>
         <button class="btn btn-secondary" type="button" id="dibujar-cerco" disabled>Dibujar Cerco</button>
+        <button class="btn btn-secondary" type="button" id="cerrar-cerco" disabled>Cerrar Cerco</button>
+        <button class="btn btn-secondary" type="button" id="editar-cerco" disabled>Editar Cerco</button>
         <button class="btn btn-secondary" type="button" id="limpiar-cerco" disabled>Limpiar Cerco</button>
+        <span class="cerco-status-hint" id="cerco-status-hint" aria-live="polite"></span>
       </div>
 
       <div class="metrics" role="group" aria-label="Métricas operativas">
