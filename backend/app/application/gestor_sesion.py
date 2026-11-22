@@ -14,6 +14,7 @@ import uuid
 
 import bcrypt
 import jwt
+from pymongo.errors import DuplicateKeyError
 
 from backend.app.core.config import Settings, get_settings
 from backend.app.infrastructure.repositorio_mongodb import RepositorioMongoDB
@@ -63,6 +64,10 @@ class ContrasenaInvalidaError(AuthError):
 
 class EnvioCorreoError(AuthError):
     """Raised when configured SMTP delivery fails."""
+
+
+class UsuarioOCorreoDuplicadoError(AuthError):
+    """Raised when username or email already exists in usuarios collection."""
 
 
 def _get_dummy_bcrypt_hash(rounds: int) -> bytes:
@@ -164,8 +169,72 @@ class GestorSesionUnica:
         return user_doc
 
     # ------------------------------------------------------------------
-    # US-01 Core Methods
+    # US-01 / US-11 Core Methods
     # ------------------------------------------------------------------
+    def registrarUsuario(
+        self,
+        usuario: str,
+        correo: str,
+        clave: str,
+        confirmarClave: str,
+    ) -> Any:
+        """Validate, hash with Bcrypt, and persist a new user account without roles.
+
+        Args:
+            usuario: Unique username for authentication.
+            correo: Unique email address for account recovery.
+            clave: Plain password (8 to 72 UTF-8 bytes).
+            confirmarClave: Password confirmation that must match ``clave``.
+
+        Returns:
+            Inserted MongoDB ``ObjectId`` of the created user document.
+
+        Raises:
+            ContrasenaInvalidaError: If password violates length or character rules.
+            ContrasenasNoCoincidenError: If ``clave`` and ``confirmarClave`` differ.
+            UsuarioOCorreoDuplicadoError: If username or email is already registered.
+        """
+        if (
+            not isinstance(clave, str)
+            or clave.strip() == ""
+            or _CONTROL_CHAR_RE.search(clave)
+        ):
+            raise ContrasenaInvalidaError(
+                "La contraseña debe tener entre 8 y 72 bytes UTF-8 válidos."
+            )
+
+        clave_bytes = clave.encode("utf-8")
+        if len(clave_bytes) < 8 or len(clave_bytes) > 72:
+            raise ContrasenaInvalidaError(
+                "La contraseña debe tener entre 8 y 72 bytes UTF-8 válidos."
+            )
+
+        if not isinstance(confirmarClave, str) or not secrets.compare_digest(
+            clave, confirmarClave
+        ):
+            raise ContrasenasNoCoincidenError("Las contraseñas no coinciden.")
+
+        usuario_norm = usuario.strip()
+        correo_norm = correo.strip().lower()
+
+        if self._repositorio.existeUsuarioOCorreo(usuario_norm, correo_norm):
+            raise UsuarioOCorreoDuplicadoError(
+                "El usuario o correo electrónico ya se encuentra registrado."
+            )
+
+        password_hash = bcrypt.hashpw(
+            clave_bytes, bcrypt.gensalt(rounds=self.rondasBcrypt)
+        ).decode("utf-8")
+
+        try:
+            return self._repositorio.crearUsuario(
+                usuario_norm, correo_norm, password_hash
+            )
+        except DuplicateKeyError as exc:
+            raise UsuarioOCorreoDuplicadoError(
+                "El usuario o correo electrónico ya se encuentra registrado."
+            ) from exc
+
     def iniciarSesionUnica(self, usuario: str, clave: str) -> str:
         """Authenticate operator and acquire atomic single-session lock."""
         if (

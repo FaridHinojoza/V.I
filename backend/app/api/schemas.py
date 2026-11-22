@@ -159,6 +159,39 @@ class LoginRequest(BaseModel):
         return _validate_password_value(value, "clave", min_chars=1, max_bytes=72)
 
 
+class RegistroRequest(BaseModel):
+    """Esquema para POST /api/auth/registro (US-11 / RF-17)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    usuario: StrictStr
+    correo: StrictStr
+    clave: StrictStr
+    confirmar_clave: StrictStr
+
+    @field_validator("usuario")
+    @classmethod
+    def validate_usuario(cls, value: str) -> str:
+        return _validate_usuario_value(value)
+
+    @field_validator("correo")
+    @classmethod
+    def validate_correo(cls, value: str) -> str:
+        return _validate_email_value(value)
+
+    @field_validator("clave")
+    @classmethod
+    def validate_clave(cls, value: str) -> str:
+        return _validate_password_value(value, "clave", min_chars=8, max_bytes=72)
+
+    @field_validator("confirmar_clave")
+    @classmethod
+    def validate_confirmar_clave(cls, value: str) -> str:
+        return _validate_password_value(
+            value, "confirmar_clave", min_chars=8, max_bytes=72
+        )
+
+
 class LogoutRequest(BaseModel):
     """Esquema para cuerpo de POST /api/auth/logout."""
 
@@ -240,6 +273,11 @@ RecuperarRequest = Annotated[
 
 class LoginResponse(BaseModel):
     token: str
+    usuario: str
+    mensaje: str
+
+
+class RegistroResponse(BaseModel):
     usuario: str
     mensaje: str
 

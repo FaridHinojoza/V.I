@@ -162,6 +162,10 @@ def create_app(
     def page_recuperar() -> Response:
         return _serve_html_page("recuperar.html")
 
+    @fastapi_app.get("/registro", include_in_schema=False)
+    def page_registro() -> Response:
+        return _serve_html_page("registro.html")
+
     @fastapi_app.get("/monitoreo", include_in_schema=False)
     def page_monitoreo() -> Response:
         return _serve_html_page("monitoreo.html")
