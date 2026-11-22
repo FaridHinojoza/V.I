@@ -19,6 +19,11 @@
 
       <div class="auth-card-body">
         <form id="login-form" class="form-stack" novalidate autocomplete="off">
+          <div id="login-success" class="alert alert-success" role="status" aria-live="polite" hidden>
+            <p class="alert-heading" id="login-success-title">Usuario registrado exitosamente.</p>
+            <p class="alert-text" id="login-success-text">Ingrese sus credenciales para iniciar sesión.</p>
+          </div>
+
           <div id="login-alert" class="alert alert-error" role="alert" aria-live="assertive" hidden>
             <p class="alert-heading" id="login-alert-title">Credenciales inválidas o sesión única ya activa.</p>
             <p class="alert-text" id="login-alert-text">Verifique su usuario y contraseña e intente nuevamente.</p>
@@ -43,8 +48,9 @@
 
           <hr class="divider">
 
-          <div class="action-row">
+          <div class="action-row-split">
             <a class="btn btn-secondary" href="/recuperar">¿Olvidó su contraseña?</a>
+            <a class="btn btn-secondary" href="/registro">Registrarse</a>
           </div>
         </form>
       </div>
