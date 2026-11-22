@@ -17,8 +17,8 @@ import pytest
 from pymongo import DESCENDING
 from pymongo.errors import DuplicateKeyError
 
-from app.config import Config, Settings, get_settings
-from app.repositories import RepositorioMongoDB
+from backend.app.core.config import Config, Settings, get_settings
+from backend.app.infrastructure.repositorio_mongodb import RepositorioMongoDB
 
 
 # ---------------------------------------------------------------------------

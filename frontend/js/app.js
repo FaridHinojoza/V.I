@@ -1,1 +1,0 @@
-// Punto de entrada del frontend modular: enrutador de las 6 pantallas y control de sesion unica.

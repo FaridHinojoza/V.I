@@ -1,1 +1,0 @@
-// Pantalla 5: Modo Evaluacion Experimental (.mp4, cerco de 4 a 6 vertices, comparativa dual y exportacion).

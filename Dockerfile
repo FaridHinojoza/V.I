@@ -22,8 +22,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
     torch==2.5.1 torchvision==0.20.1
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
+COPY requirements.txt requirements-dev.txt .
+RUN pip install --no-cache-dir -r requirements-dev.txt \
     && pip uninstall -y opencv-python || true
 
 # Copiar aplicacion y crear usuario no privilegiado
@@ -31,6 +31,7 @@ COPY backend ./backend
 COPY frontend ./frontend
 COPY scripts ./scripts
 COPY models ./models
+COPY tests ./tests
 
 RUN useradd -m -u 1000 appuser \
     && chown -R appuser:appuser /app

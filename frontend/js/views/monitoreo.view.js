@@ -1,1 +1,0 @@
-// Pantalla 3: Monitoreo en Vivo (camara en tiempo real, cerco, umbrales, 6 metricas y alertas).

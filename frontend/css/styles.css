@@ -406,6 +406,7 @@ h3 {
   max-width: 1200px;
   margin: 0 auto;
   padding: var(--space-lg) var(--space-xl) var(--space-xxl);
+  align-items: start;
 }
 
 .monitor-col {
@@ -454,20 +455,75 @@ h3 {
   font-weight: 600;
   letter-spacing: 0.88px;
   text-transform: uppercase;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.badge-pill-live {
+  background: #e6f4ea;
+  color: var(--semantic-success);
+  border: 1px solid rgba(31, 138, 101, 0.3);
+}
+
+.badge-pill-error {
+  background: #fce8e6;
+  color: var(--semantic-error);
+  border: 1px solid rgba(207, 45, 86, 0.3);
+}
+
+.btn-stop {
+  background: var(--surface-card);
+  color: var(--semantic-error);
+  border: 1px solid var(--semantic-error);
+}
+
+.btn-stop:hover:not(:disabled) {
+  background: var(--semantic-error);
+  color: #ffffff;
 }
 
 .video-stage {
+  position: relative;
+  width: 100%;
+  height: 380px;
+  max-height: 380px;
+  background: #0d0d0c;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--rounded-md);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stage-placeholder {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: var(--space-xs);
-  min-height: 360px;
   padding: var(--space-lg);
   background: var(--canvas-soft);
-  border: 1px solid var(--hairline-strong);
-  border-radius: var(--rounded-md);
-  text-align: center;
+  z-index: 1;
+}
+
+.stage-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #0d0d0c;
+  z-index: 2;
+}
+
+.stage-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 3;
 }
 
 .stage-title {

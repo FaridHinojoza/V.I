@@ -21,11 +21,11 @@ import pytest
 from pymongo import DESCENDING
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
-from app.config import Settings
-from app.main import create_app
-from app.repositories import RepositorioMongoDB
-from app.routers.auth_router import get_gestor_sesion
-from app.services import (
+from backend.app.core.config import Settings
+from backend.app.main import create_app
+from backend.app.infrastructure.repositorio_mongodb import RepositorioMongoDB
+from backend.app.api.routes_auth import get_gestor_sesion
+from backend.app.application.gestor_sesion import (
     ContrasenasNoCoincidenError,
     GestorSesionUnica,
     SesionActivaError,
