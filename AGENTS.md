@@ -32,3 +32,5 @@ Eres el **Arquitecto e Ingeniero de Software Principal** del aplicativo web **V.
     * La IA **no ejecuta** commits ni push sobre el repositorio del sistema (`V.I.git`). Solo genera y recomienda los comandos exactos de consola para que el desarrollador los ejecute manualmente.
     * **Prohibido realizar commits o push directamente en `main`**.
     * Toda tarea se deriva de la rama **`dev`** mediante feature branches: `feature/US-XX-<descripcion-corta>`, aplicando *Conventional Commits*.
+12. **Documentación Continua de Historias de Usuario en Google Docs (`DesarrolloHistoriasUsuario`):**
+    * Al culminar el desarrollo y las pruebas de cada historia de usuario (`US-XX`), el agente tiene la obligación de registrar en el Google Doc **`DesarrolloHistoriasUsuario`** (Drive ID: `1FGG-qU8Cs3kwB6vHbQWRF7-2UWxD8YZX2cNB5CwbcPs`) todos los cambios técnicos, cómo se implementó, requisitos funcionales/no funcionales cubiertos (`RF-XX`/`RNF-XX`/`CP-XX`), tecnologías involucradas y pruebas realizadas.
