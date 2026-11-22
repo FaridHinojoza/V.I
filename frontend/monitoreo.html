@@ -26,17 +26,21 @@
           <span class="badge-pill" id="camara-estado">Cámara desconectada</span>
         </div>
         <div class="panel-body">
-          <div class="video-stage">
-            <h3 class="stage-title">Cámara en espera</h3>
-            <p class="stage-text">Presione Iniciar Cámara para conectar la transmisión en vivo.</p>
+          <div class="video-stage" id="video-stage-container">
+            <div class="stage-placeholder" id="stage-placeholder">
+              <h3 class="stage-title">Cámara en espera</h3>
+              <p class="stage-text">Presione Iniciar Cámara para conectar la transmisión en vivo.</p>
+            </div>
+            <video id="video-stream" class="stage-video" autoplay playsinline muted style="display: none;"></video>
+            <canvas id="canvas-stage" class="stage-canvas" style="display: none;"></canvas>
           </div>
         </div>
       </section>
 
       <div class="control-bar">
         <button class="btn btn-primary" type="button" id="iniciar-camara">Iniciar Cámara</button>
-        <button class="btn btn-secondary" type="button" disabled>Dibujar Cerco</button>
-        <button class="btn btn-secondary" type="button" disabled>Limpiar Cerco</button>
+        <button class="btn btn-secondary" type="button" id="dibujar-cerco" disabled>Dibujar Cerco</button>
+        <button class="btn btn-secondary" type="button" id="limpiar-cerco" disabled>Limpiar Cerco</button>
       </div>
 
       <div class="metrics" role="group" aria-label="Métricas operativas">

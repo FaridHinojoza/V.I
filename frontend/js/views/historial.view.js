@@ -1,1 +1,0 @@
-// Pantalla 6: Historial de Alertas y Exportacion de Reportes (.csv / .json).

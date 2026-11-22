@@ -1,1 +1,0 @@
-// Estado efimero en memoria de la sesion actual (sin persistencia de cercos preconfigurados).

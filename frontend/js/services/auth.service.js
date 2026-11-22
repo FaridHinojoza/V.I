@@ -1,1 +1,0 @@
-// Servicio de autenticacion: login, logout, liberacion en pagehide y recuperacion de contrasena en 2 pasos.

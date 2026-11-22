@@ -28,6 +28,7 @@ services:
     environment:
       MONGO_URI: ${MONGO_URI:-mongodb://mongodb:27017}
       MONGO_DB_NAME: ${MONGO_DB_NAME:-vi_db}
+      JWT_SECRET: ${JWT_SECRET:-9f4b2c8e1a7d6f035b9e2c4a8d1f7036e5b9c2a4d8f1036e9b2c5a8d1f407362}
     ports:
       - "${APP_PORT:-8000}:8000"
     depends_on:
