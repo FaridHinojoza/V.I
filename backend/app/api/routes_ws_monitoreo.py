@@ -1,8 +1,9 @@
-"""Router y controlador WebSocket para Monitoreo en Vivo (US-02 / US-03 / RF-03 / RF-04 / RF-05 / RF-06).
+"""Router y controlador WebSocket para Monitoreo en Vivo (US-02 / US-03 / US-04).
 
 Gobierna el canal bidireccional /ws/monitoreo con autenticación obligatoria
-por token JWT, handshake de estado de cámara, ciclo de vida del cerco virtual en memoria
-y emisión de telemetría operativa.
+por token JWT, handshake de estado de cámara, ciclo de vida del cerco virtual en memoria,
+aislamiento espacial pre-inferencia (RNF-02) y detección de peatones con YOLO en CPU y RAM
+(RF-03, RF-04, RF-05, RF-06, RF-07, RNF-01, RNF-04, CP-02, CP-03, CP-04).
 """
 
 from __future__ import annotations
@@ -15,15 +16,62 @@ from typing import Any, Optional
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
 
 from backend.app.application.gestor_sesion import GestorSesionUnica
+from backend.app.core.concurrency import ejecutar_inferencia_cpu
+from backend.app.core.config import Settings
 from backend.app.domain.cerco_virtual import (
     CercoInvalidoError,
     CercoVirtualEnMemoria,
-    EstadoCerco,
+)
+from backend.app.domain.ports import IDetectorPeatones
+from backend.app.vision.estrategias_roi import EstrategiaCercoVirtual
+from backend.app.vision.yolo_detector import (
+    DetectorYOLOCPU,
+    FrameInvalidoError,
+    decodificar_frame_base64,
 )
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Monitoreo en Vivo"])
+
+
+def _obtener_detector_ws(websocket: WebSocket) -> IDetectorPeatones:
+    """Resuelve la instancia del detector YOLO en CPU desde el estado de la app o el Singleton.
+
+    Args:
+        websocket: Conexión WebSocket activa.
+
+    Returns:
+        Instancia de `IDetectorPeatones` configurada en CPU y memoria RAM.
+    """
+    detector_inyectado: Optional[IDetectorPeatones] = getattr(
+        websocket.app.state, "detector_yolo", None
+    )
+    if detector_inyectado is not None:
+        return detector_inyectado
+
+    settings: Optional[Settings] = getattr(websocket.app.state, "settings", None)
+    model_path = settings.yolo_model_path if settings is not None else "models/yolo11n.pt"
+    return DetectorYOLOCPU.obtener_instancia(model_path=model_path)
+
+
+def _crear_estrategia_cerco_ws(websocket: WebSocket) -> EstrategiaCercoVirtual:
+    """Construye la estrategia de aislamiento espacial ROI según la configuración activa.
+
+    Args:
+        websocket: Conexión WebSocket activa.
+
+    Returns:
+        Instancia de `EstrategiaCercoVirtual` con padding RNF-02 e `imgsz` dinámico.
+    """
+    settings: Optional[Settings] = getattr(websocket.app.state, "settings", None)
+    if settings is not None:
+        return EstrategiaCercoVirtual(
+            padding_pct=settings.roi_padding_pct,
+            imgsz_max=settings.yolo_imgsz_max,
+            conf_min=settings.yolo_conf_threshold,
+        )
+    return EstrategiaCercoVirtual()
 
 
 async def _validar_sesion_ws(
@@ -59,14 +107,84 @@ async def _validar_sesion_ws(
     return {"usuario": usuario}
 
 
+async def _manejar_procesar_frame(
+    websocket: WebSocket,
+    data: dict[str, Any],
+    cerco_activo: CercoVirtualEnMemoria,
+    estrategia_cerco: EstrategiaCercoVirtual,
+    detector: IDetectorPeatones,
+) -> None:
+    """Procesa un fotograma entrante ejecutando YOLO en CPU sobre el área del cerco (US-04).
+
+    Args:
+        websocket: Canal WebSocket activo.
+        data: Diccionario JSON recibido con `frame_b64` y dimensiones opcionales.
+        cerco_activo: Cerco virtual dinámico de 4 a 6 vértices en memoria de sesión.
+        estrategia_cerco: Estrategia de recorte con padding RNF-02 y filtro Point-in-Polygon.
+        detector: Adaptador de detección YOLO sobre CPU y RAM.
+    """
+    if not cerco_activo.esta_cerrado:
+        await websocket.send_json(
+            {
+                "tipo": "resultado_deteccion",
+                "cerco_activo": False,
+                "detecciones": [],
+                "peatones_detectados": 0,
+                "inferencia_ms": 0.0,
+                "area_cerco_pct": 0.0,
+                "imgsz": 0,
+                "dispositivo": detector.dispositivo,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        return
+
+    frame_b64 = data.get("frame_b64", "")
+    try:
+        ancho_hint = int(data.get("ancho", 640))
+        alto_hint = int(data.get("alto", 480))
+    except (TypeError, ValueError):
+        ancho_hint, alto_hint = 640, 480
+
+    try:
+        imagen = decodificar_frame_base64(
+            frame_b64=frame_b64,
+            ancho_fallback=ancho_hint,
+            alto_fallback=alto_hint,
+        )
+    except FrameInvalidoError as err:
+        logger.warning("Fotograma inválido rechazado en /ws/monitoreo: %s", err)
+        await websocket.send_json(
+            {
+                "tipo": "error_procesamiento",
+                "mensaje": str(err),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        return
+
+    resultado = await ejecutar_inferencia_cpu(
+        estrategia_cerco.procesar,
+        imagen,
+        cerco_activo,
+        detector,
+    )
+
+    respuesta = resultado.to_dict()
+    respuesta["tipo"] = "resultado_deteccion"
+    respuesta["timestamp"] = datetime.now(timezone.utc).isoformat()
+    await websocket.send_json(respuesta)
+
+
 @router.websocket("/ws/monitoreo")
 async def websocket_monitoreo(
     websocket: WebSocket,
     token: Optional[str] = Query(default=None),
 ) -> None:
-    """Canal WebSocket en tiempo real para Monitoreo en Vivo (RF-03 / RF-04 / RF-05 / RF-06 / CP-02 / CP-03).
+    """Canal WebSocket en tiempo real para Monitoreo en Vivo (RF-03 a RF-07 / CP-02 a CP-04).
 
-    Mantiene en memoria el cerco virtual activo durante la conexión sin persistencia en base de datos.
+    Mantiene en memoria el cerco virtual activo durante la conexión sin persistencia en base de datos
+    y ejecuta la detección de peatones con YOLO sobre CPU y RAM cuando el cerco está cerrado.
     """
     sesion = await _validar_sesion_ws(websocket, token)
     if sesion is None:
@@ -78,6 +196,8 @@ async def websocket_monitoreo(
 
     # Cerco virtual dinámico efímero en memoria (RNF-04 / cero persistencia en BD)
     cerco_activo = CercoVirtualEnMemoria()
+    estrategia_cerco = _crear_estrategia_cerco_ws(websocket)
+    detector = _obtener_detector_ws(websocket)
 
     # Enviar mensaje de bienvenida y telemetría inicial
     await websocket.send_json(
@@ -172,6 +292,16 @@ async def websocket_monitoreo(
                         "area_cerco_pct": 0.0,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
+                )
+
+            elif tipo_mensaje == "procesar_frame":
+                # Ejecución de YOLO sobre el área del cerco en CPU y memoria RAM (US-04 / RF-07 / RNF-01 / RNF-02)
+                await _manejar_procesar_frame(
+                    websocket=websocket,
+                    data=data,
+                    cerco_activo=cerco_activo,
+                    estrategia_cerco=estrategia_cerco,
+                    detector=detector,
                 )
 
             else:

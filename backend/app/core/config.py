@@ -83,6 +83,24 @@ def _parse_int(name: str, default: int, min_val: int, max_val: int) -> int:
     return parsed
 
 
+def _parse_float(name: str, default: float, min_val: float, max_val: float) -> float:
+    """Valida y parsea una variable de entorno decimal dentro de un rango permitido."""
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        parsed = float(raw.strip())
+    except ValueError as exc:
+        raise ValueError(
+            f"La variable de entorno '{name}' debe ser un número real válido, se recibió: {raw!r}"
+        ) from exc
+    if not (min_val <= parsed <= max_val):
+        raise ValueError(
+            f"La variable de entorno '{name}' debe estar entre {min_val} y {max_val}, se recibió: {parsed}"
+        )
+    return parsed
+
+
 @dataclass(frozen=True)
 class Settings:
     """Ajustes de configuración fuertemente tipados para el Sistema V.I."""
@@ -103,6 +121,10 @@ class Settings:
     smtp_from: str
     app_port: int
     log_level: str
+    yolo_model_path: str = "models/yolo11n.pt"
+    yolo_conf_threshold: float = 0.35
+    yolo_imgsz_max: int = 640
+    roi_padding_pct: float = 0.15
 
     @property
     def MONGO_URI(self) -> str:
@@ -168,6 +190,22 @@ class Settings:
     def LOG_LEVEL(self) -> str:
         return self.log_level
 
+    @property
+    def YOLO_MODEL_PATH(self) -> str:
+        return self.yolo_model_path
+
+    @property
+    def YOLO_CONF_THRESHOLD(self) -> float:
+        return self.yolo_conf_threshold
+
+    @property
+    def YOLO_IMGSZ_MAX(self) -> int:
+        return self.yolo_imgsz_max
+
+    @property
+    def ROI_PADDING_PCT(self) -> float:
+        return self.roi_padding_pct
+
     def validate_jwt_secret(self) -> None:
         """Asegura que JWT_SECRET esté presente y tenga longitud segura mínima de 32 caracteres."""
         secret = self.jwt_secret.strip()
@@ -201,6 +239,7 @@ def get_settings(env_path: Optional[Path] = None) -> Settings:
     smtp_password = os.getenv("SMTP_PASSWORD", "")
     smtp_from = os.getenv("SMTP_FROM") or "no-reply@espe.edu.ec"
     log_level = (os.getenv("LOG_LEVEL") or "INFO").upper()
+    yolo_model_path = os.getenv("YOLO_MODEL_PATH") or "models/yolo11n.pt"
 
     return Settings(
         mongo_uri=mongo_uri,
@@ -219,4 +258,8 @@ def get_settings(env_path: Optional[Path] = None) -> Settings:
         smtp_from=smtp_from,
         app_port=_parse_int("APP_PORT", 8000, 1, 65535),
         log_level=log_level,
+        yolo_model_path=yolo_model_path,
+        yolo_conf_threshold=_parse_float("YOLO_CONF_THRESHOLD", 0.35, 0.05, 0.99),
+        yolo_imgsz_max=_parse_int("YOLO_IMGSZ_MAX", 640, 160, 1280),
+        roi_padding_pct=_parse_float("ROI_PADDING_PCT", 0.15, 0.0, 0.50),
     )
