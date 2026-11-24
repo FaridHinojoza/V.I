@@ -31,6 +31,13 @@
   var arrastrandoIdx = null; // Índice del vértice siendo arrastrado con el ratón
   var estadoVisualCerco = "verde"; // "verde" (normal) | "amarillo" (observación) | "rojo" (alerta)
 
+  // Estado de Detección de Peatones con YOLO en CPU y RAM (US-04 / RF-07 / RNF-01)
+  var deteccionesActivas = []; // Cajas normalizadas de personas dentro del cerco
+  var esperandoDeteccion = false; // Control de flujo (backpressure) para no saturar CPU
+  var timerDeteccionCPU = null;
+  var captureCanvas = document.createElement("canvas");
+  var captureCtx = captureCanvas ? captureCanvas.getContext("2d") : null;
+
   function goToLogin() {
     VI.clearToken();
     window.location.replace("/login");
@@ -87,7 +94,23 @@
             renderizarLienzo();
           }
         } else if (data.tipo === "cerco_limpiado") {
+          deteccionesActivas = [];
+          esperandoDeteccion = false;
           actualizarMetricaArea(0.0);
+          actualizarMetricasDOM({ peatones: 0, alertas: 0 });
+          renderizarLienzo();
+        } else if (data.tipo === "resultado_deteccion") {
+          esperandoDeteccion = false;
+          deteccionesActivas = Array.isArray(data.detecciones) ? data.detecciones : [];
+          actualizarMetricasDOM({
+            inferencia_ms: data.inferencia_ms,
+            area_cerco_pct: data.area_cerco_pct,
+            peatones: data.peatones_detectados !== undefined ? data.peatones_detectados : deteccionesActivas.length,
+            alertas: 0
+          });
+          renderizarLienzo();
+        } else if (data.tipo === "error_procesamiento") {
+          esperandoDeteccion = false;
         } else if (data.tipo === "error_cerco") {
           if (cercoStatusHint) {
             cercoStatusHint.textContent = data.mensaje || "Error al validar cerco.";
@@ -186,6 +209,7 @@
 
       sincronizarDimensionesCanvas();
       conectarWebSocket();
+      iniciarBucleDeteccionCPU();
     }
 
     function onStreamError(error) {
@@ -247,9 +271,14 @@
     // Deshabilitar herramientas de cerco
     if (btnDibujarCerco) { btnDibujarCerco.disabled = true; btnDibujarCerco.classList.remove("btn-active-tool"); }
     if (btnCerrarCerco) { btnCerrarCerco.disabled = true; }
-    if (btnEditarCerco) { btnEditarCerco.disabled = true; btnEditarCerco.classList.remove("btn-active-tool"); }
+    if (btnEditarCerco) {
+      btnEditarCerco.disabled = true;
+      btnEditarCerco.classList.remove("btn-active-tool");
+      btnEditarCerco.textContent = "Editar Cerco";
+    }
     if (btnLimpiarCerco) { btnLimpiarCerco.disabled = true; }
 
+    detenerBucleDeteccionCPU();
     limpiarLienzoCerco(false);
     desconectarWebSocket();
   }
@@ -352,6 +381,77 @@
         ctx.fillText(String(j + 1), vx + 8, vy - 6);
       }
     }
+
+    // 3. Dibujar cajas delimitadoras de personas detectadas dentro del cerco (US-04 / RF-07)
+    if ((modoCerco === "CERRADO" || modoCerco === "EDITANDO") && deteccionesActivas.length > 0) {
+      for (var k = 0; k < deteccionesActivas.length; k++) {
+        var det = deteccionesActivas[k];
+        var bx = det.x1 * w;
+        var by = det.y1 * h;
+        var bw = Math.max(4, (det.x2 - det.x1) * w);
+        var bh = Math.max(4, (det.y2 - det.y1) * h);
+
+        ctx.strokeStyle = "#f54e00";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(bx, by, bw, bh);
+
+        var confPct = Math.round((Number(det.confianza) || 0) * 100);
+        var etiqueta = "Persona " + confPct + "%";
+        ctx.font = "600 11px monospace";
+        var anchoTexto = ctx.measureText(etiqueta).width + 10;
+        var altoEtiqueta = 18;
+        var etiqY = by >= altoEtiqueta ? by - altoEtiqueta : by;
+
+        ctx.fillStyle = "#26251e";
+        ctx.fillRect(bx, etiqY, anchoTexto, altoEtiqueta);
+        ctx.fillStyle = "#fafaf7";
+        ctx.fillText(etiqueta, bx + 5, etiqY + 13);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Captura de Fotogramas y Envío con Backpressure hacia YOLO en CPU (US-04 / RF-07)
+  // ---------------------------------------------------------------------------
+  function capturarYEnviarFrameCerco() {
+    if (esperandoDeteccion) { return; }
+    if (!mediaStream || !mediaStream.active || !videoElement) { return; }
+    if (!socket || socket.readyState !== WebSocket.OPEN) { return; }
+    if ((modoCerco !== "CERRADO" && modoCerco !== "EDITANDO") || vertices.length < 4) { return; }
+    if (!captureCanvas || !captureCtx) { return; }
+
+    var vw = videoElement.videoWidth || 640;
+    var vh = videoElement.videoHeight || 480;
+    if (vw <= 0 || vh <= 0) { return; }
+
+    captureCanvas.width = vw;
+    captureCanvas.height = vh;
+    try {
+      captureCtx.drawImage(videoElement, 0, 0, vw, vh);
+      var frameB64 = captureCanvas.toDataURL("image/jpeg", 0.72);
+      esperandoDeteccion = true;
+      socket.send(JSON.stringify({
+        tipo: "procesar_frame",
+        frame_b64: frameB64,
+        ancho: vw,
+        alto: vh
+      }));
+    } catch (err) {
+      esperandoDeteccion = false;
+    }
+  }
+
+  function iniciarBucleDeteccionCPU() {
+    detenerBucleDeteccionCPU();
+    timerDeteccionCPU = setInterval(capturarYEnviarFrameCerco, 220);
+  }
+
+  function detenerBucleDeteccionCPU() {
+    if (timerDeteccionCPU !== null) {
+      clearInterval(timerDeteccionCPU);
+      timerDeteccionCPU = null;
+    }
+    esperandoDeteccion = false;
   }
 
   function obtenerPuntoCanvas(event) {
@@ -392,7 +492,11 @@
       estadoVisualCerco = "verde";
 
       btnDibujarCerco.classList.add("btn-active-tool");
-      if (btnEditarCerco) { btnEditarCerco.classList.remove("btn-active-tool"); btnEditarCerco.disabled = true; }
+      if (btnEditarCerco) {
+        btnEditarCerco.classList.remove("btn-active-tool");
+        btnEditarCerco.textContent = "Editar Cerco";
+        btnEditarCerco.disabled = true;
+      }
       if (btnCerrarCerco) { btnCerrarCerco.disabled = true; }
       if (btnLimpiarCerco) { btnLimpiarCerco.disabled = false; }
 
@@ -416,7 +520,11 @@
     canvasElement.className = "stage-canvas";
     if (btnDibujarCerco) { btnDibujarCerco.classList.remove("btn-active-tool"); }
     if (btnCerrarCerco) { btnCerrarCerco.disabled = true; }
-    if (btnEditarCerco) { btnEditarCerco.disabled = false; btnEditarCerco.classList.remove("btn-active-tool"); }
+    if (btnEditarCerco) {
+      btnEditarCerco.disabled = false;
+      btnEditarCerco.classList.remove("btn-active-tool");
+      btnEditarCerco.textContent = "Editar Cerco";
+    }
     if (btnLimpiarCerco) { btnLimpiarCerco.disabled = false; }
 
     var areaPct = calcularAreaShoelace(vertices);
@@ -446,11 +554,13 @@
       if (modoCerco === "CERRADO") {
         modoCerco = "EDITANDO";
         btnEditarCerco.classList.add("btn-active-tool");
+        btnEditarCerco.textContent = "Dejar de editar";
         canvasElement.className = "stage-canvas cursor-edit";
         cercoStatusHint.textContent = "Arrastre cualquier vértice con el mouse para reajustar la zona.";
       } else if (modoCerco === "EDITANDO") {
         modoCerco = "CERRADO";
         btnEditarCerco.classList.remove("btn-active-tool");
+        btnEditarCerco.textContent = "Editar Cerco";
         canvasElement.className = "stage-canvas";
         cercoStatusHint.textContent = "Cerco reajustado y sincronizado.";
 
@@ -469,6 +579,8 @@
   // Limpiar Cerco (RF-06 / CP-03)
   function limpiarLienzoCerco(notificarWS) {
     vertices = [];
+    deteccionesActivas = [];
+    esperandoDeteccion = false;
     modoCerco = "INACTIVO";
     arrastrandoIdx = null;
     estadoVisualCerco = "verde";
@@ -483,7 +595,11 @@
       btnDibujarCerco.disabled = !(mediaStream && mediaStream.active);
     }
     if (btnCerrarCerco) { btnCerrarCerco.disabled = true; }
-    if (btnEditarCerco) { btnEditarCerco.disabled = true; btnEditarCerco.classList.remove("btn-active-tool"); }
+    if (btnEditarCerco) {
+      btnEditarCerco.disabled = true;
+      btnEditarCerco.classList.remove("btn-active-tool");
+      btnEditarCerco.textContent = "Editar Cerco";
+    }
     if (btnLimpiarCerco) { btnLimpiarCerco.disabled = true; }
 
     if (cercoVerticesBadge) { cercoVerticesBadge.style.display = "none"; }

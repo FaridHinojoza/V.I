@@ -24,7 +24,8 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu 
 
 COPY requirements.txt requirements-dev.txt .
 RUN pip install --no-cache-dir -r requirements-dev.txt \
-    && pip uninstall -y opencv-python || true
+    && pip uninstall -y opencv-python opencv-python-headless || true \
+    && pip install --no-cache-dir --no-deps opencv-python-headless==4.10.0.84
 
 # Copiar aplicacion y crear usuario no privilegiado
 COPY backend ./backend
