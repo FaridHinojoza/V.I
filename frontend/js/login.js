@@ -4,6 +4,11 @@
 
   var form = VI.byId("login-form");
   var submit = VI.byId("login-submit");
+  var successBox = VI.byId("login-success");
+
+  if (successBox && window.location.search.indexOf("registrado=1") !== -1) {
+    successBox.hidden = false;
+  }
 
   // Si ya hay una sesión válida en esta pestaña, ir directo al monitoreo.
   var existing = VI.getToken();

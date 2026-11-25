@@ -22,6 +22,8 @@ from backend.app.api.schemas import (
     RecuperarRequest,
     RecuperarSolicitarRequest,
     RecuperarSolicitarResponse,
+    RegistroRequest,
+    RegistroResponse,
     VerificarResponse,
 )
 from backend.app.application.gestor_sesion import (
@@ -32,6 +34,7 @@ from backend.app.application.gestor_sesion import (
     CredencialesInvalidasError,
     EnvioCorreoError,
     GestorSesionUnica,
+    UsuarioOCorreoDuplicadoError,
 )
 
 logger = logging.getLogger(__name__)
@@ -97,6 +100,51 @@ def _sanitize_validation_errors(exc: ValidationError) -> list[dict[str, object]]
         }
         for err in exc.errors()
     ]
+
+
+@router.post(
+    "/registro",
+    response_model=RegistroResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def registrar_usuario(
+    payload: RegistroRequest,
+    gestor: GestorSesionUnica = Depends(get_gestor_sesion),
+) -> RegistroResponse:
+    """Register a new user account directly without hierarchical roles (US-11)."""
+    try:
+        gestor.registrarUsuario(
+            payload.usuario,
+            payload.correo,
+            payload.clave,
+            payload.confirmar_clave,
+        )
+    except ContrasenasNoCoincidenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Las contraseñas no coinciden.",
+        ) from exc
+    except ContrasenaInvalidaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La contraseña no cumple los requisitos de seguridad.",
+        ) from exc
+    except UsuarioOCorreoDuplicadoError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="El usuario o correo electrónico ya se encuentra registrado.",
+        ) from exc
+    except PyMongoError as exc:
+        logger.error("MongoDB error during /api/auth/registro: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Servicio de base de datos temporalmente no disponible.",
+        ) from exc
+
+    return RegistroResponse(
+        usuario=payload.usuario,
+        mensaje="Usuario registrado exitosamente.",
+    )
 
 
 @router.post("/login", response_model=LoginResponse)

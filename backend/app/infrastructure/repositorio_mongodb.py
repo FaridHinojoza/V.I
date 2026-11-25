@@ -185,12 +185,16 @@ class RepositorioMongoDB:
         return sanitized
 
     # ------------------------------------------------------------------
-    # Operaciones de autenticación de cuenta única
+    # Operaciones de autenticación y gestión de usuarios
     # ------------------------------------------------------------------
-    def inicializarCuentaUnica(self) -> None:
-        """Crea índices únicos e inicializa idelpotentemente la cuenta única del operador."""
+    def asegurarIndicesUsuarios(self) -> None:
+        """Crea índices únicos sobre usuario y correo si no existen."""
         self.colUsuarios.create_index("usuario", unique=True, name="idx_usuario_unique")
         self.colUsuarios.create_index("correo", unique=True, name="idx_correo_unique")
+
+    def inicializarCuentaUnica(self) -> None:
+        """Crea índices únicos e inicializa idempotentemente la cuenta semilla por defecto."""
+        self.asegurarIndicesUsuarios()
 
         if self.colUsuarios.find_one({"usuario": self._default_username}) is not None:
             return
@@ -217,6 +221,34 @@ class RepositorioMongoDB:
             self.colUsuarios.insert_one(documento_semilla)
         except DuplicateKeyError:
             return
+
+    def existeUsuarioOCorreo(self, usuario: str, correo: str) -> bool:
+        """Verifica si ya existe una cuenta con el usuario o correo indicado."""
+        self._validar_str(usuario, "usuario", permitir_vacio=False, prohibir_dolar=True)
+        self._validar_str(correo, "correo", permitir_vacio=False, prohibir_dolar=True)
+        return (
+            self.colUsuarios.find_one(
+                {"$or": [{"usuario": usuario}, {"correo": correo}]},
+                {"_id": 1},
+            )
+            is not None
+        )
+
+    def crearUsuario(self, usuario: str, correo: str, password_hash: str) -> ObjectId:
+        """Inserta una nueva cuenta de usuario sin roles jerárquicos en colUsuarios."""
+        self._validar_str(usuario, "usuario", permitir_vacio=False, prohibir_dolar=True)
+        self._validar_str(correo, "correo", permitir_vacio=False, prohibir_dolar=True)
+        self._validar_str(
+            password_hash, "password_hash", permitir_vacio=False, prohibir_dolar=False
+        )
+        documento = {
+            "usuario": usuario,
+            "correo": correo,
+            "password_hash": password_hash,
+            "token_sesion_unica": "",
+            "codigo_recuperacion": "",
+        }
+        return self.colUsuarios.insert_one(documento).inserted_id
 
     def validarCredencialesUnicas(self, usuario: str) -> Optional[dict[str, Any]]:
         """Busca y retorna el documento del usuario o None."""
@@ -319,15 +351,29 @@ class RepositorioMongoDB:
     # ------------------------------------------------------------------
     # Operaciones para alertas y evaluaciones
     # ------------------------------------------------------------------
-    def guardarAlertaAutomatica(self, alerta: dict[str, Any]) -> ObjectId:
-        """Inserta un documento de alerta en colAlertas."""
+    def guardarAlertaAutomatica(
+        self,
+        alerta: dict[str, Any],
+        *,
+        usuario_id: Optional[ObjectId] = None,
+    ) -> ObjectId:
+        """Inserta un documento de alerta en colAlertas vinculado opcionalmente al usuario."""
         doc = self._validar_dict_seguro(alerta, "alerta")
+        if usuario_id is not None:
+            doc["usuario_id"] = usuario_id
         doc.setdefault("fecha_evento", datetime.now(timezone.utc))
         return self.colAlertas.insert_one(doc).inserted_id
 
-    def guardarEvaluacionAutomatica(self, evaluacion: dict[str, Any]) -> ObjectId:
+    def guardarEvaluacionAutomatica(
+        self,
+        evaluacion: dict[str, Any],
+        *,
+        usuario_id: Optional[ObjectId] = None,
+    ) -> ObjectId:
         """Inserta un documento de evaluación comparativa en colEvaluaciones."""
         doc = self._validar_dict_seguro(evaluacion, "evaluacion")
+        if usuario_id is not None:
+            doc["usuario_id"] = usuario_id
         doc.setdefault("fecha_evaluacion", datetime.now(timezone.utc))
         return self.colEvaluaciones.insert_one(doc).inserted_id
 
@@ -336,14 +382,30 @@ class RepositorioMongoDB:
         filtro_motivo: Optional[str] = None,
         *,
         filtroMotivo: Optional[str] = None,
+        usuario_id: Optional[ObjectId] = None,
     ) -> list[dict[str, Any]]:
         """Consulta el historial de alertas ordenadas descendentemente por fecha."""
         motivo = filtro_motivo if filtro_motivo is not None else filtroMotivo
         filtro: dict[str, Any] = {}
+        if usuario_id is not None:
+            filtro["usuario_id"] = usuario_id
         if motivo is not None:
             self._validar_str(
                 motivo, "filtro_motivo", permitir_vacio=True, prohibir_dolar=True
             )
             if motivo != "":
-                filtro = {"motivo_alerta": motivo}
+                filtro["motivo_alerta"] = motivo
         return list(self.colAlertas.find(filtro).sort("fecha_evento", DESCENDING))
+
+    def consultarEvaluaciones(
+        self,
+        *,
+        usuario_id: Optional[ObjectId] = None,
+    ) -> list[dict[str, Any]]:
+        """Consulta las evaluaciones comparativas ordenadas descendentemente por fecha."""
+        filtro: dict[str, Any] = {}
+        if usuario_id is not None:
+            filtro["usuario_id"] = usuario_id
+        return list(
+            self.colEvaluaciones.find(filtro).sort("fecha_evaluacion", DESCENDING)
+        )
