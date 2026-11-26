@@ -24,18 +24,39 @@
         <div class="panel-head">
           <div class="panel-head-left">
             <h2 class="panel-title" id="camara-title">CÁMARA EN TIEMPO REAL</h2>
-            <span class="badge-cerco-info" id="cerco-vertices-badge" style="display: none;">0 / 6 vértices</span>
+            <span class="badge-cerco-info hidden" id="cerco-vertices-badge">0 / 6 vértices</span>
           </div>
           <span class="badge-pill" id="camara-estado">Cámara desconectada</span>
         </div>
         <div class="panel-body">
+          <div class="camera-source-bar">
+            <div class="source-toggle" role="group" aria-label="Método de conexión de cámara">
+              <button class="source-option source-option-active" type="button" id="modo-camara-local" aria-pressed="true">Cámara Local (PC)</button>
+              <button class="source-option" type="button" id="modo-camara-rtsp" aria-pressed="false">Enlace RTSP / IP</button>
+            </div>
+            <div class="rtsp-input-row hidden" id="rtsp-config-row">
+              <label class="field-label-compact" for="rtsp-url-input">Enlace de transmisión en red (RTSP / HTTP)</label>
+              <input
+                class="text-input text-input-mono"
+                type="text"
+                id="rtsp-url-input"
+                placeholder="rtsp://admin:clave@192.168.0.76:554/Streaming/Channels/101"
+                autocomplete="off"
+                spellcheck="false"
+                aria-describedby="rtsp-url-input-error"
+              >
+              <p class="field-error" id="rtsp-url-input-error" hidden></p>
+            </div>
+          </div>
+
           <div class="video-stage" id="video-stage-container">
             <div class="stage-placeholder" id="stage-placeholder">
               <h3 class="stage-title">Cámara en espera</h3>
-              <p class="stage-text">Presione Iniciar Cámara para conectar la transmisión en vivo.</p>
+              <p class="stage-text" id="stage-placeholder-text">Presione Iniciar Cámara para conectar la transmisión en vivo.</p>
             </div>
-            <video id="video-stream" class="stage-video" autoplay playsinline muted style="display: none;"></video>
-            <canvas id="canvas-stage" class="stage-canvas" style="display: none;"></canvas>
+            <video id="video-stream" class="stage-video hidden" autoplay playsinline muted></video>
+            <img id="rtsp-stream" class="stage-video hidden" alt="Flujo de cámara en red en tiempo real">
+            <canvas id="canvas-stage" class="stage-canvas hidden"></canvas>
           </div>
         </div>
       </section>
@@ -96,6 +117,7 @@
   </main>
 
   <script src="/static/js/common.js"></script>
+  <script src="/static/js/components/cerco_canvas.js"></script>
   <script src="/static/js/monitoreo.js"></script>
 </body>
 </html>
