@@ -23,12 +23,41 @@
       var bw = Math.max(4, (det.x2 - det.x1) * w);
       var bh = Math.max(4, (det.y2 - det.y1) * h);
 
+      // 1. Trazar polilínea histórica de trayectoria ByteTrack (US-05 / RF-08)
+      if (Array.isArray(det.trayectoria) && det.trayectoria.length >= 2) {
+        ctx.beginPath();
+        ctx.moveTo(det.trayectoria[0].x * w, det.trayectoria[0].y * h);
+        for (var t = 1; t < det.trayectoria.length; t++) {
+          ctx.lineTo(det.trayectoria[t].x * w, det.trayectoria[t].y * h);
+        }
+        ctx.strokeStyle = "rgba(245, 78, 0, 0.80)";
+        ctx.lineWidth = 2.2;
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+        ctx.stroke();
+      }
+
+      // 2. Nodo de apoyo de pies sobre el plano del suelo
+      var piesX = det.punto_pies ? (det.punto_pies.x * w) : (bx + bw * 0.5);
+      var piesY = det.punto_pies ? (det.punto_pies.y * h) : (by + bh);
+      ctx.beginPath();
+      ctx.arc(piesX, piesY, 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = "#f54e00";
+      ctx.fill();
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+
+      // 3. Caja delimitadora y etiqueta con ID continuo ByteTrack
       ctx.strokeStyle = "#f54e00";
       ctx.lineWidth = 2;
       ctx.strokeRect(bx, by, bw, bh);
 
       var confPct = Math.round((Number(det.confianza) || 0) * 100);
-      var etiqueta = "Persona " + confPct + "%";
+      var tieneId = det.track_id !== undefined && det.track_id !== null;
+      var etiqueta = tieneId
+        ? ("ID #" + det.track_id + " · " + confPct + "%")
+        : ("Persona " + confPct + "%");
       ctx.font = "600 11px monospace";
       var anchoTexto = ctx.measureText(etiqueta).width + 10;
       var altoEtiqueta = 18;

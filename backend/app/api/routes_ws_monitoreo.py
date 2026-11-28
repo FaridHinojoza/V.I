@@ -1,9 +1,9 @@
-"""Router y controlador WebSocket para Monitoreo en Vivo (US-02 / US-03 / US-04).
+"""Router y controlador WebSocket para Monitoreo en Vivo (US-02 / US-03 / US-04 / US-05).
 
 Gobierna el canal bidireccional /ws/monitoreo con autenticación obligatoria
 por token JWT, soporte dual para cámara local (PC) o enlace de cámara en red (RTSP / IP),
-ciclo de vida del cerco virtual en memoria, aislamiento espacial pre-inferencia (RNF-02)
-y detección de peatones con YOLO sobre CPU y RAM (RF-03 a RF-07, RNF-01, RNF-04, CP-02 a CP-04).
+ciclo de vida del cerco virtual en memoria, detección YOLO + seguimiento ByteTrack en CPU/RAM
+y emisión continua de las 8 métricas computacionales de V 1.2 (RF-03 a RF-08, RF-11, CP-02 a CP-04).
 """
 
 from __future__ import annotations
@@ -20,16 +20,19 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
 from backend.app.application.gestor_sesion import GestorSesionUnica
 from backend.app.core.concurrency import ejecutar_inferencia_cpu
 from backend.app.core.config import Settings
+from backend.app.core.telemetry import MonitorTelemetriaProceso
 from backend.app.domain.cerco_virtual import (
     CercoInvalidoError,
     CercoVirtualEnMemoria,
 )
-from backend.app.domain.ports import IDetectorPeatones
+from backend.app.domain.metricas import MetricasOperativas
+from backend.app.domain.ports import IDetectorPeatones, IRastreadorPeatones
 from backend.app.vision.capturador_rtsp import (
     CapturadorRTSP,
     URLCamaraInvalidaError,
 )
 from backend.app.vision.estrategias_roi import EstrategiaCercoVirtual
+from backend.app.vision.tracker_bytetrack import RastreadorByteTrack
 from backend.app.vision.yolo_detector import (
     DetectorYOLOCPU,
     FrameInvalidoError,
@@ -50,11 +53,18 @@ def _ahora_iso() -> str:
 
 
 async def _enviar_json_seguro(
-    websocket: WebSocket, envio_lock: asyncio.Lock, payload: dict[str, Any]
+    websocket: WebSocket,
+    envio_lock: asyncio.Lock,
+    payload: dict[str, Any],
+    monitor_telemetria: Optional[MonitorTelemetriaProceso] = None,
+    contabilizar_bytes: bool = True,
 ) -> None:
-    """Serializa el envío por WebSocket evitando colisiones entre corrutinas concurrentes."""
+    """Serializa el envío por WebSocket y registra los bytes salientes para KB/s (RF-11)."""
+    texto = json.dumps(payload, ensure_ascii=False)
+    if contabilizar_bytes and monitor_telemetria is not None:
+        monitor_telemetria.registrar_bytes_payload(len(texto.encode("utf-8")))
     async with envio_lock:
-        await websocket.send_json(payload)
+        await websocket.send_text(texto)
 
 
 def _obtener_detector_ws(websocket: WebSocket) -> IDetectorPeatones:
@@ -82,8 +92,21 @@ def _crear_estrategia_cerco_ws(websocket: WebSocket) -> EstrategiaCercoVirtual:
     return EstrategiaCercoVirtual()
 
 
+def _crear_rastreador_ws(websocket: WebSocket) -> IRastreadorPeatones:
+    """Instancia un rastreador ByteTrack aislado para la sesión WebSocket activa."""
+    fabrica: Optional[Callable[[], IRastreadorPeatones]] = getattr(
+        websocket.app.state, "rastreador_factory", None
+    )
+    if fabrica is not None:
+        return fabrica()
+
+    settings: Optional[Settings] = getattr(websocket.app.state, "settings", None)
+    conf_alta = settings.yolo_conf_threshold if settings is not None else 0.35
+    return RastreadorByteTrack(conf_alta=conf_alta)
+
+
 class _GestorStreamRTSPSesion:
-    """Administra la captura RTSP y la inferencia YOLO en segundo plano sobre CPU/RAM."""
+    """Administra la captura RTSP, seguimiento ByteTrack y las 8 métricas sobre CPU/RAM."""
 
     def __init__(
         self,
@@ -92,6 +115,8 @@ class _GestorStreamRTSPSesion:
         cerco_activo: CercoVirtualEnMemoria,
         estrategia_cerco: EstrategiaCercoVirtual,
         detector: IDetectorPeatones,
+        rastreador: IRastreadorPeatones,
+        monitor_telemetria: MonitorTelemetriaProceso,
         capturador_factory: Callable[[str], CapturadorRTSP],
     ) -> None:
         self._ws = websocket
@@ -99,6 +124,8 @@ class _GestorStreamRTSPSesion:
         self._cerco = cerco_activo
         self._estrategia = estrategia_cerco
         self._detector = detector
+        self._rastreador = rastreador
+        self._telemetria = monitor_telemetria
         self._factory = capturador_factory
         self._capturador: Optional[CapturadorRTSP] = None
         self._tarea_emision: Optional[asyncio.Task[None]] = None
@@ -106,11 +133,13 @@ class _GestorStreamRTSPSesion:
         self._ultimo_disparo_yolo: float = 0.0
         self._ultima_inferencia_ms: float = 0.0
         self._ultimos_peatones: int = 0
+        self._ultimo_fps_rtsp: float = 0.0
 
     def reiniciar_telemetria_cerco(self) -> None:
-        """Limpia los contadores de inferencia cuando el usuario borra el cerco activo."""
+        """Limpia contadores de inferencia y pistas ByteTrack cuando se borra el cerco."""
         self._ultima_inferencia_ms = 0.0
         self._ultimos_peatones = 0
+        self._rastreador.reiniciar()
 
     async def iniciar(self, url_raw: str) -> None:
         """Valida, conecta e inicia la emisión continua del enlace RTSP solicitado."""
@@ -128,10 +157,12 @@ class _GestorStreamRTSPSesion:
                     "mensaje": str(err),
                     "timestamp": _ahora_iso(),
                 },
+                self._telemetria,
             )
             return
 
         self._capturador = capturador
+        self._telemetria.reiniciar()
         self.reiniciar_telemetria_cerco()
         await _enviar_json_seguro(
             self._ws,
@@ -143,11 +174,12 @@ class _GestorStreamRTSPSesion:
                 "alto": alto,
                 "timestamp": _ahora_iso(),
             },
+            self._telemetria,
         )
         self._tarea_emision = asyncio.create_task(self._bucle_emision(capturador))
 
     async def detener(self, notificar_cliente: bool = False) -> None:
-        """Cancela las tareas activas de captura e inferencia y libera el descriptor OpenCV."""
+        """Cancela tareas de captura/inferencia, reinicia pistas y libera OpenCV."""
         capturador = self._capturador
         tarea_emision = self._tarea_emision
         tarea_yolo = self._tarea_yolo
@@ -155,6 +187,7 @@ class _GestorStreamRTSPSesion:
         self._tarea_emision = None
         self._tarea_yolo = None
         self.reiniciar_telemetria_cerco()
+        self._telemetria.reiniciar()
 
         if capturador is not None:
             await asyncio.to_thread(capturador.detener)
@@ -172,10 +205,11 @@ class _GestorStreamRTSPSesion:
                 self._ws,
                 self._envio_lock,
                 {"tipo": "rtsp_detenido", "timestamp": _ahora_iso()},
+                self._telemetria,
             )
 
     def _programar_yolo_si_aplica(self, frame_bgr: Any) -> None:
-        """Lanza detección YOLO con backpressure sin bloquear la fluidez del video RTSP."""
+        """Lanza detección YOLO + ByteTrack con backpressure sin frenar el video RTSP."""
         if frame_bgr is None or not self._cerco.esta_cerrado:
             return
         if self._tarea_yolo is not None and not self._tarea_yolo.done():
@@ -188,13 +222,14 @@ class _GestorStreamRTSPSesion:
         self._tarea_yolo = asyncio.create_task(self._ejecutar_yolo_rtsp(frame_bgr))
 
     async def _ejecutar_yolo_rtsp(self, frame_bgr: Any) -> None:
-        """Ejecuta EstrategiaCercoVirtual sobre el cuadro BGR en memoria y emite detecciones."""
+        """Ejecuta EstrategiaCercoVirtual + ByteTrack sobre el cuadro BGR en memoria."""
         try:
             resultado = await ejecutar_inferencia_cpu(
                 self._estrategia.procesar,
                 frame_bgr,
                 self._cerco,
                 self._detector,
+                self._rastreador,
             )
             if self._capturador is None or not self._capturador.activo:
                 return
@@ -203,15 +238,24 @@ class _GestorStreamRTSPSesion:
             self._ultimos_peatones = int(resultado.peatones_detectados)
             respuesta = resultado.to_dict()
             respuesta["tipo"] = "resultado_deteccion"
+            respuesta["metricas"] = self._telemetria.construir_metricas(
+                inferencia_ms=resultado.inferencia_ms,
+                area_cerco_pct=resultado.area_cerco_pct,
+                peatones=resultado.peatones_detectados,
+                alertas=0,
+                fps_override=self._ultimo_fps_rtsp,
+            ).to_dict()
             respuesta["timestamp"] = _ahora_iso()
-            await _enviar_json_seguro(self._ws, self._envio_lock, respuesta)
+            await _enviar_json_seguro(
+                self._ws, self._envio_lock, respuesta, self._telemetria
+            )
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            logger.debug("Inferencia YOLO RTSP omitida en fotograma actual: %s", exc)
+            logger.debug("Inferencia YOLO+ByteTrack RTSP omitida en fotograma: %s", exc)
 
     async def _bucle_emision(self, capturador: CapturadorRTSP) -> None:
-        """Lee fotogramas RTSP en hilo trabajador, lanza YOLO si hay cerco y emite métricas."""
+        """Lee fotogramas RTSP, registra payload KB/s y emite las 8 métricas (RF-11)."""
         try:
             while capturador.activo:
                 fotograma = await asyncio.to_thread(capturador.leer_fotograma)
@@ -226,9 +270,11 @@ class _GestorStreamRTSPSesion:
                                 "mensaje": "Se interrumpió la señal de video de la cámara en red.",
                                 "timestamp": _ahora_iso(),
                             },
+                            self._telemetria,
                         )
                     break
 
+                self._ultimo_fps_rtsp = fotograma.fps
                 self._programar_yolo_si_aplica(fotograma.frame_bgr)
                 inf_ms = (
                     self._ultima_inferencia_ms
@@ -236,6 +282,22 @@ class _GestorStreamRTSPSesion:
                     else fotograma.inferencia_ms
                 )
                 peatones = self._ultimos_peatones if self._cerco.esta_cerrado else 0
+
+                # Contabilizar bytes estimados del fotograma saliente para reportar KB/s inmediatos
+                kbs_actual = self._telemetria.registrar_bytes_payload(
+                    len(fotograma.jpeg_b64) + 260
+                )
+                metricas_frame = MetricasOperativas(
+                    fps=fotograma.fps,
+                    inferencia_ms=round(inf_ms, 2),
+                    area_cerco_pct=self._cerco.calcular_porcentaje_area(),
+                    cpu_pct=fotograma.cpu_pct,
+                    ram_mb=fotograma.ram_mb,
+                    gpu_pct=fotograma.gpu_pct,
+                    ancho_banda_kbs=kbs_actual,
+                    peatones=peatones,
+                    alertas=0,
+                ).to_dict()
 
                 await _enviar_json_seguro(
                     self._ws,
@@ -245,17 +307,11 @@ class _GestorStreamRTSPSesion:
                         "frame_b64": fotograma.jpeg_b64,
                         "ancho": fotograma.ancho,
                         "alto": fotograma.alto,
-                        "metricas": {
-                            "fps": fotograma.fps,
-                            "inferencia_ms": round(inf_ms, 2),
-                            "area_cerco_pct": self._cerco.calcular_porcentaje_area(),
-                            "cpu_pct": fotograma.cpu_pct,
-                            "ram_mb": fotograma.ram_mb,
-                            "peatones": peatones,
-                            "alertas": 0,
-                        },
+                        "metricas": metricas_frame,
                         "timestamp": _ahora_iso(),
                     },
+                    self._telemetria,
+                    contabilizar_bytes=False,
                 )
                 await asyncio.sleep(_INTERVALO_FRAME_RTSP_SEG)
         except asyncio.CancelledError:
@@ -305,9 +361,19 @@ async def _manejar_procesar_frame(
     cerco_activo: CercoVirtualEnMemoria,
     estrategia_cerco: EstrategiaCercoVirtual,
     detector: IDetectorPeatones,
+    rastreador: IRastreadorPeatones,
+    monitor_telemetria: MonitorTelemetriaProceso,
 ) -> None:
-    """Procesa un fotograma entrante (cámara local PC) ejecutando YOLO en CPU (US-04)."""
+    """Procesa un fotograma de cámara local ejecutando YOLO + ByteTrack y las 8 métricas."""
+    monitor_telemetria.registrar_fotograma()
+
     if not cerco_activo.esta_cerrado:
+        metricas_sin_cerco = monitor_telemetria.construir_metricas(
+            inferencia_ms=0.0,
+            area_cerco_pct=0.0,
+            peatones=0,
+            alertas=0,
+        ).to_dict()
         await _enviar_json_seguro(
             websocket,
             envio_lock,
@@ -320,8 +386,10 @@ async def _manejar_procesar_frame(
                 "area_cerco_pct": 0.0,
                 "imgsz": 0,
                 "dispositivo": detector.dispositivo,
+                "metricas": metricas_sin_cerco,
                 "timestamp": _ahora_iso(),
             },
+            monitor_telemetria,
         )
         return
 
@@ -348,6 +416,7 @@ async def _manejar_procesar_frame(
                 "mensaje": str(err),
                 "timestamp": _ahora_iso(),
             },
+            monitor_telemetria,
         )
         return
 
@@ -356,11 +425,18 @@ async def _manejar_procesar_frame(
         imagen,
         cerco_activo,
         detector,
+        rastreador,
     )
     respuesta = resultado.to_dict()
     respuesta["tipo"] = "resultado_deteccion"
+    respuesta["metricas"] = monitor_telemetria.construir_metricas(
+        inferencia_ms=resultado.inferencia_ms,
+        area_cerco_pct=resultado.area_cerco_pct,
+        peatones=resultado.peatones_detectados,
+        alertas=0,
+    ).to_dict()
     respuesta["timestamp"] = _ahora_iso()
-    await _enviar_json_seguro(websocket, envio_lock, respuesta)
+    await _enviar_json_seguro(websocket, envio_lock, respuesta, monitor_telemetria)
 
 
 async def _manejar_cerco_actualizado(
@@ -368,6 +444,7 @@ async def _manejar_cerco_actualizado(
     envio_lock: asyncio.Lock,
     cerco_activo: CercoVirtualEnMemoria,
     raw_vertices: Any,
+    monitor_telemetria: MonitorTelemetriaProceso,
 ) -> None:
     """Procesa y valida la definición o reajuste del cerco de 4 a 6 vértices (RF-04 a RF-06)."""
     try:
@@ -388,6 +465,7 @@ async def _manejar_cerco_actualizado(
                 "estado": cerco_activo.estado.value,
                 "timestamp": _ahora_iso(),
             },
+            monitor_telemetria,
         )
     except CercoInvalidoError as err:
         logger.warning("Intento de trazado de cerco inválido rechazado: %s", err)
@@ -402,6 +480,7 @@ async def _manejar_cerco_actualizado(
                 else 0,
                 "timestamp": _ahora_iso(),
             },
+            monitor_telemetria,
         )
 
 
@@ -411,6 +490,8 @@ async def _despachar_evento_ws(
     cerco_activo: CercoVirtualEnMemoria,
     estrategia_cerco: EstrategiaCercoVirtual,
     detector: IDetectorPeatones,
+    rastreador: IRastreadorPeatones,
+    monitor_telemetria: MonitorTelemetriaProceso,
     gestor_rtsp: _GestorStreamRTSPSesion,
     data: dict[str, Any],
 ) -> None:
@@ -419,7 +500,10 @@ async def _despachar_evento_ws(
 
     if tipo_mensaje == "ping":
         await _enviar_json_seguro(
-            websocket, envio_lock, {"tipo": "pong", "timestamp": _ahora_iso()}
+            websocket,
+            envio_lock,
+            {"tipo": "pong", "timestamp": _ahora_iso()},
+            monitor_telemetria,
         )
         return
 
@@ -428,10 +512,13 @@ async def _despachar_evento_ws(
         logger.info("Estado de cámara local reportado por el cliente: %s", estado)
         if estado == "desconectada":
             await gestor_rtsp.detener(notificar_cliente=False)
+            rastreador.reiniciar()
+            monitor_telemetria.reiniciar()
         await _enviar_json_seguro(
             websocket,
             envio_lock,
             {"tipo": "camara_estado_ack", "estado": estado, "timestamp": _ahora_iso()},
+            monitor_telemetria,
         )
         return
 
@@ -445,18 +532,24 @@ async def _despachar_evento_ws(
 
     if tipo_mensaje == "cerco_actualizado":
         await _manejar_cerco_actualizado(
-            websocket, envio_lock, cerco_activo, data.get("vertices", [])
+            websocket,
+            envio_lock,
+            cerco_activo,
+            data.get("vertices", []),
+            monitor_telemetria,
         )
         return
 
     if tipo_mensaje == "limpiar_cerco":
         cerco_activo.limpiar()
+        rastreador.reiniciar()
         gestor_rtsp.reiniciar_telemetria_cerco()
-        logger.info("Cerco virtual limpiado en memoria de sesión activa.")
+        logger.info("Cerco virtual y rastreador ByteTrack limpiados en sesión activa.")
         await _enviar_json_seguro(
             websocket,
             envio_lock,
             {"tipo": "cerco_limpiado", "area_cerco_pct": 0.0, "timestamp": _ahora_iso()},
+            monitor_telemetria,
         )
         return
 
@@ -468,6 +561,8 @@ async def _despachar_evento_ws(
             cerco_activo=cerco_activo,
             estrategia_cerco=estrategia_cerco,
             detector=detector,
+            rastreador=rastreador,
+            monitor_telemetria=monitor_telemetria,
         )
         return
 
@@ -475,6 +570,7 @@ async def _despachar_evento_ws(
         websocket,
         envio_lock,
         {"tipo": "ack", "recibido": tipo_mensaje, "timestamp": _ahora_iso()},
+        monitor_telemetria,
     )
 
 
@@ -483,11 +579,7 @@ async def websocket_monitoreo(
     websocket: WebSocket,
     token: Optional[str] = Query(default=None),
 ) -> None:
-    """Canal WebSocket en tiempo real para Monitoreo en Vivo (US-02 / US-03 / US-04).
-
-    Mantiene en memoria el cerco virtual activo durante la conexión, soporta cámara local
-    y enlaces RTSP/IP, y ejecuta detección YOLO en CPU dentro del área vigilada.
-    """
+    """Canal WebSocket en tiempo real para Monitoreo en Vivo (US-02 a US-05 / V 1.2)."""
     sesion = await _validar_sesion_ws(websocket, token)
     if sesion is None:
         return
@@ -500,6 +592,8 @@ async def websocket_monitoreo(
     cerco_activo = CercoVirtualEnMemoria()
     estrategia_cerco = _crear_estrategia_cerco_ws(websocket)
     detector = _obtener_detector_ws(websocket)
+    rastreador = _crear_rastreador_ws(websocket)
+    monitor_telemetria = MonitorTelemetriaProceso()
     capturador_factory: Callable[[str], CapturadorRTSP] = getattr(
         websocket.app.state, "rtsp_capturador_factory", CapturadorRTSP
     )
@@ -509,6 +603,8 @@ async def websocket_monitoreo(
         cerco_activo=cerco_activo,
         estrategia_cerco=estrategia_cerco,
         detector=detector,
+        rastreador=rastreador,
+        monitor_telemetria=monitor_telemetria,
         capturador_factory=capturador_factory,
     )
 
@@ -519,21 +615,15 @@ async def websocket_monitoreo(
             "tipo": "conexion_establecida",
             "usuario": usuario,
             "timestamp": _ahora_iso(),
-            "telemetria_inicial": {
-                "fps": 0.0,
-                "inferencia_ms": 0.0,
-                "area_cerco_pct": 0.0,
-                "cpu_pct": 0.0,
-                "ram_mb": 0.0,
-                "peatones": 0,
-                "alertas": 0,
-            },
+            "telemetria_inicial": MetricasOperativas.iniciales().to_dict(),
         },
+        monitor_telemetria,
     )
 
     try:
         while True:
             mensaje_raw = await websocket.receive_text()
+            monitor_telemetria.registrar_bytes_payload(len(mensaje_raw.encode("utf-8")))
             try:
                 data = json.loads(mensaje_raw)
             except json.JSONDecodeError:
@@ -541,6 +631,7 @@ async def websocket_monitoreo(
                     websocket,
                     envio_lock,
                     {"tipo": "error", "mensaje": "Formato de mensaje JSON inválido."},
+                    monitor_telemetria,
                 )
                 continue
 
@@ -550,6 +641,8 @@ async def websocket_monitoreo(
                 cerco_activo=cerco_activo,
                 estrategia_cerco=estrategia_cerco,
                 detector=detector,
+                rastreador=rastreador,
+                monitor_telemetria=monitor_telemetria,
                 gestor_rtsp=gestor_rtsp,
                 data=data,
             )

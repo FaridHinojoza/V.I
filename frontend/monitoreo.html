@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Monitoreo en Vivo — V.I Sistema de Vigilancia Inteligente</title>
-  <link rel="stylesheet" href="/static/css/styles.css">
+  <link rel="stylesheet" href="/static/css/styles.css?v=1.2">
 </head>
 <body>
   <header class="top-nav">
@@ -70,13 +70,15 @@
         <span class="cerco-status-hint" id="cerco-status-hint" aria-live="polite"></span>
       </div>
 
-      <div class="metrics" role="group" aria-label="Métricas operativas">
-        <div class="metric"><span class="metric-label">Velocidad</span><span class="metric-value">-- FPS</span></div>
-        <div class="metric"><span class="metric-label">Inferencia</span><span class="metric-value">-- ms</span></div>
-        <div class="metric"><span class="metric-label">Área Cerco</span><span class="metric-value">-- %</span></div>
-        <div class="metric"><span class="metric-label">CPU</span><span class="metric-value">-- %</span></div>
-        <div class="metric"><span class="metric-label">RAM</span><span class="metric-value">-- MB</span></div>
-        <div class="metric"><span class="metric-label">Peatones / Alertas</span><span class="metric-value">0 / 0</span></div>
+      <div class="metrics" role="group" aria-label="Métricas computacionales operativas">
+        <div class="metric"><span class="metric-label">Velocidad</span><span class="metric-value" id="metric-fps">-- FPS</span></div>
+        <div class="metric"><span class="metric-label">Inferencia</span><span class="metric-value" id="metric-ms">-- ms</span></div>
+        <div class="metric"><span class="metric-label">Área Cerco</span><span class="metric-value" id="metric-area">-- %</span></div>
+        <div class="metric"><span class="metric-label">CPU</span><span class="metric-value" id="metric-cpu">-- %</span></div>
+        <div class="metric"><span class="metric-label">RAM</span><span class="metric-value" id="metric-ram">-- MB</span></div>
+        <div class="metric"><span class="metric-label">GPU</span><span class="metric-value" id="metric-gpu">-- %</span></div>
+        <div class="metric"><span class="metric-label">Ancho de Banda</span><span class="metric-value" id="metric-bw">-- KB/s</span></div>
+        <div class="metric"><span class="metric-label">Peatones / Alertas</span><span class="metric-value" id="metric-conteo">0 / 0</span></div>
       </div>
     </div>
 
@@ -116,8 +118,8 @@
     </div>
   </main>
 
-  <script src="/static/js/common.js"></script>
-  <script src="/static/js/components/cerco_canvas.js"></script>
-  <script src="/static/js/monitoreo.js"></script>
+  <script src="/static/js/common.js?v=1.2"></script>
+  <script src="/static/js/components/cerco_canvas.js?v=1.2"></script>
+  <script src="/static/js/monitoreo.js?v=1.2"></script>
 </body>
 </html>
