@@ -17,6 +17,8 @@ import time
 from typing import Any, Callable, Optional
 from urllib.parse import quote, unquote
 
+from backend.app.core.telemetry import MonitorTelemetriaProceso
+
 logger = logging.getLogger(__name__)
 
 _ESQUEMAS_PERMITIDOS = frozenset({"rtsp", "rtsps", "http", "https"})
@@ -57,40 +59,8 @@ class FotogramaCapturado:
     inferencia_ms: float
     cpu_pct: float
     ram_mb: float
+    gpu_pct: float = 0.0
     frame_bgr: Optional[Any] = None
-
-
-class _MonitorRecursosCPU:
-    """Lector ligero de métricas del servidor mediante psutil (RNF-01 / RF-11)."""
-
-    def __init__(self) -> None:
-        self._proceso: Optional[Any] = None
-        self._num_nucleos: int = max(1, os.cpu_count() or 1)
-        try:
-            import psutil
-
-            self._proceso = psutil.Process(os.getpid())
-            # Primera llamada de calentamiento no bloqueante para inicializar el delta de CPU
-            self._proceso.cpu_percent(interval=None)
-        except Exception:
-            self._proceso = None
-
-    def leer_cpu_y_ram(self) -> tuple[float, float]:
-        """Obtiene el porcentaje de CPU normalizado [0..100] y la RAM en MB.
-
-        Returns:
-            Tupla (cpu_pct, ram_mb) redondeada para telemetría en vivo.
-        """
-        if self._proceso is None:
-            return 0.0, 0.0
-        try:
-            cpu_raw = float(self._proceso.cpu_percent(interval=None))
-            cpu_norm = min(100.0, max(0.0, cpu_raw / self._num_nucleos))
-            ram_bytes = float(self._proceso.memory_info().rss)
-            ram_mb = ram_bytes / (1024.0 * 1024.0)
-            return round(cpu_norm, 1), round(ram_mb, 1)
-        except Exception:
-            return 0.0, 0.0
 
 
 def _limpiar_host_y_puerto(hostport: str) -> str:
@@ -353,7 +323,7 @@ class CapturadorRTSP:
         self._activo = False
         self._ultimo_instante_fps: float = 0.0
         self._fps_suavizado: float = 0.0
-        self._monitor_cpu = _MonitorRecursosCPU()
+        self._monitor_telemetria = MonitorTelemetriaProceso()
 
     @property
     def url_normalizada(self) -> str:
@@ -455,7 +425,7 @@ class CapturadorRTSP:
                 else (0.75 * self._fps_suavizado + 0.25 * fps_inst)
             )
 
-        cpu_pct, ram_mb = self._monitor_cpu.leer_cpu_y_ram()
+        cpu_pct, ram_mb, gpu_pct = self._monitor_telemetria.leer_cpu_ram_gpu()
         return FotogramaCapturado(
             jpeg_b64=jpeg_b64,
             ancho=ancho,
@@ -464,6 +434,7 @@ class CapturadorRTSP:
             inferencia_ms=round(duracion_ms, 1),
             cpu_pct=cpu_pct,
             ram_mb=ram_mb,
+            gpu_pct=gpu_pct,
             frame_bgr=frame_escalado,
         )
 

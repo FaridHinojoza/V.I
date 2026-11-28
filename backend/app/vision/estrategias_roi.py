@@ -17,6 +17,7 @@ from backend.app.domain.ports import (
     CajaDeteccionCruda,
     DeteccionPeaton,
     IDetectorPeatones,
+    IRastreadorPeatones,
     ResultadoDeteccionROI,
 )
 
@@ -243,77 +244,87 @@ class EstrategiaCercoVirtual:
             imgsz_optimo=imgsz_optimo,
         )
 
+    def _reproyectar_candidatos(
+        self,
+        cajas_crudas: Sequence[CajaDeteccionCruda],
+        recorte: RecorteEspacialROI,
+        umbral_confianza: float,
+    ) -> Tuple[DeteccionPeaton, ...]:
+        """Transforma cajas locales del recorte al sistema global normalizado [0.0, 1.0]."""
+        reproyectadas: List[DeteccionPeaton] = []
+        inv_ancho = 1.0 / float(recorte.ancho_frame)
+        inv_alto = 1.0 / float(recorte.alto_frame)
+
+        for caja in cajas_crudas:
+            if int(caja.clase_id) != _CLASE_PERSONA_COCO:
+                continue
+            if float(caja.confianza) < umbral_confianza:
+                continue
+
+            gx1 = max(0.0, min(1.0, (recorte.x1_px + float(caja.x1)) * inv_ancho))
+            gy1 = max(0.0, min(1.0, (recorte.y1_px + float(caja.y1)) * inv_alto))
+            gx2 = max(0.0, min(1.0, (recorte.x1_px + float(caja.x2)) * inv_ancho))
+            gy2 = max(0.0, min(1.0, (recorte.y1_px + float(caja.y2)) * inv_alto))
+            if gx2 <= gx1 or gy2 <= gy1:
+                continue
+
+            reproyectadas.append(
+                DeteccionPeaton(
+                    x1=round(gx1, 6),
+                    y1=round(gy1, 6),
+                    x2=round(gx2, 6),
+                    y2=round(gy2, 6),
+                    confianza=round(float(caja.confianza), 4),
+                    clase_id=_CLASE_PERSONA_COCO,
+                )
+            )
+        return tuple(reproyectadas)
+
+    @staticmethod
+    def _filtrar_en_poligono(
+        candidatos: Sequence[DeteccionPeaton],
+        cerco: CercoVirtualEnMemoria,
+    ) -> Tuple[DeteccionPeaton, ...]:
+        """Retiene únicamente los peatones cuyo punto de pies o centroide yace en el cerco."""
+        if not cerco.esta_cerrado:
+            return ()
+        dentro: List[DeteccionPeaton] = []
+        for candidato in candidatos:
+            pies_x, pies_y = candidato.punto_pies
+            cx, cy = candidato.centroide
+            if cerco.punto_dentro(pies_x, pies_y) or cerco.punto_dentro(cx, cy):
+                dentro.append(candidato)
+        return tuple(dentro)
+
     def reproyectar_y_filtrar(
         self,
         cajas_crudas: Sequence[CajaDeteccionCruda],
         recorte: RecorteEspacialROI,
         cerco: CercoVirtualEnMemoria,
     ) -> Tuple[DeteccionPeaton, ...]:
-        """Transforma coordenadas del recorte al cuadro global y filtra con Point-in-Polygon.
-
-        Args:
-            cajas_crudas: Cajas detectadas por YOLO en el sistema de coordenadas del recorte.
-            recorte: Geometría del recorte ROI empleado en la inferencia.
-            cerco: Polígono activo de 4 a 6 vértices en memoria.
-
-        Returns:
-            Tupla inmutable con únicamente las personas ubicadas dentro del polígono.
-        """
+        """Transforma coordenadas del recorte al cuadro global y filtra con Point-in-Polygon."""
         if not cerco.esta_cerrado:
             return ()
-
-        peatones_dentro: List[DeteccionPeaton] = []
-        inv_ancho = 1.0 / float(recorte.ancho_frame)
-        inv_alto = 1.0 / float(recorte.alto_frame)
-
-        for caja in cajas_crudas:
-            # Regla 4 y US-04: Exclusivamente clase 0 (persona) con confianza suficiente
-            if int(caja.clase_id) != _CLASE_PERSONA_COCO:
-                continue
-            if float(caja.confianza) < self._conf_min:
-                continue
-
-            # Reproyección afín: de píxeles locales del recorte a coordenadas globales [0..1]
-            gx1 = max(0.0, min(1.0, (recorte.x1_px + float(caja.x1)) * inv_ancho))
-            gy1 = max(0.0, min(1.0, (recorte.y1_px + float(caja.y1)) * inv_alto))
-            gx2 = max(0.0, min(1.0, (recorte.x1_px + float(caja.x2)) * inv_ancho))
-            gy2 = max(0.0, min(1.0, (recorte.y1_px + float(caja.y2)) * inv_alto))
-
-            if gx2 <= gx1 or gy2 <= gy1:
-                continue
-
-            candidato = DeteccionPeaton(
-                x1=round(gx1, 6),
-                y1=round(gy1, 6),
-                x2=round(gx2, 6),
-                y2=round(gy2, 6),
-                confianza=round(float(caja.confianza), 4),
-                clase_id=_CLASE_PERSONA_COCO,
-            )
-
-            # Verificación Point-in-Polygon (Ray-casting): pies o centroide dentro del polígono
-            pies_x, pies_y = candidato.punto_pies
-            cx, cy = candidato.centroide
-            if cerco.punto_dentro(pies_x, pies_y) or cerco.punto_dentro(cx, cy):
-                peatones_dentro.append(candidato)
-
-        return tuple(peatones_dentro)
+        candidatos = self._reproyectar_candidatos(cajas_crudas, recorte, self._conf_min)
+        return self._filtrar_en_poligono(candidatos, cerco)
 
     def procesar(
         self,
         imagen: Any,
         cerco: CercoVirtualEnMemoria,
         detector: IDetectorPeatones,
+        rastreador: IRastreadorPeatones | None = None,
     ) -> ResultadoDeteccionROI:
-        """Ejecuta el flujo completo de aislamiento ROI, detección YOLO en CPU y filtrado.
+        """Ejecuta aislamiento ROI, detección YOLO en CPU, seguimiento ByteTrack y filtrado.
 
         Args:
             imagen: Fotograma completo en memoria RAM.
             cerco: Cerco virtual dinámico de 4 a 6 vértices de la sesión activa.
             detector: Implementación de `IDetectorPeatones` operando en CPU.
+            rastreador: Instancia opcional `IRastreadorPeatones` (ByteTrack US-05 / RF-08).
 
         Returns:
-            `ResultadoDeteccionROI` con las personas detectadas dentro del cerco y telemetría.
+            `ResultadoDeteccionROI` con `inferencia_ms` midiendo detector + rastreador.
         """
         if not cerco.esta_cerrado:
             return ResultadoDeteccionROI(
@@ -329,15 +340,28 @@ class EstrategiaCercoVirtual:
         recorte = self.calcular_recorte_roi(cerco, ancho_frame, alto_frame)
         subimagen = recortar_region_imagen(imagen, recorte)
 
+        conf_consulta = (
+            min(self._conf_min, float(getattr(rastreador, "conf_baja", self._conf_min)))
+            if rastreador is not None
+            else self._conf_min
+        )
+
         t_inicio = time.perf_counter()
         cajas_locales = detector.detectar_personas(
             imagen=subimagen,
             imgsz=recorte.imgsz_optimo,
-            conf_min=self._conf_min,
+            conf_min=conf_consulta,
         )
-        inferencia_ms = (time.perf_counter() - t_inicio) * 1000.0
+        if rastreador is not None:
+            candidatos_globales = self._reproyectar_candidatos(
+                cajas_locales, recorte, conf_consulta
+            )
+            rastreados = rastreador.actualizar(candidatos_globales)
+            peatones_filtrados = self._filtrar_en_poligono(rastreados, cerco)
+        else:
+            peatones_filtrados = self.reproyectar_y_filtrar(cajas_locales, recorte, cerco)
 
-        peatones_filtrados = self.reproyectar_y_filtrar(cajas_locales, recorte, cerco)
+        inferencia_ms = (time.perf_counter() - t_inicio) * 1000.0
 
         return ResultadoDeteccionROI(
             detecciones=peatones_filtrados,
@@ -375,17 +399,9 @@ class EstrategiaEscenaCompleta:
         imagen: Any,
         detector: IDetectorPeatones,
         cerco_referencia: CercoVirtualEnMemoria | None = None,
+        rastreador: IRastreadorPeatones | None = None,
     ) -> ResultadoDeteccionROI:
-        """Ejecuta YOLO sobre la totalidad del fotograma sin aislamiento previo.
-
-        Args:
-            imagen: Fotograma completo en memoria RAM.
-            detector: Instancia de `IDetectorPeatones` operando en CPU.
-            cerco_referencia: Polígono opcional para filtrar qué peatones caen en la zona.
-
-        Returns:
-            `ResultadoDeteccionROI` con las métricas de procesamiento de cuadro completo.
-        """
+        """Ejecuta YOLO (y ByteTrack opcional) sobre el 100 % del fotograma sin recorte."""
         ancho_frame, alto_frame = obtener_dimensiones_imagen(imagen)
         recorte_total = RecorteEspacialROI(
             x1_px=0,
@@ -396,37 +412,30 @@ class EstrategiaEscenaCompleta:
             alto_frame=alto_frame,
             imgsz_optimo=self._imgsz,
         )
+        conf_consulta = (
+            min(self._conf_min, float(getattr(rastreador, "conf_baja", self._conf_min)))
+            if rastreador is not None
+            else self._conf_min
+        )
+        estrategia_aux = EstrategiaCercoVirtual(conf_min=self._conf_min)
 
         t_inicio = time.perf_counter()
         cajas = detector.detectar_personas(
             imagen=imagen,
             imgsz=self._imgsz,
-            conf_min=self._conf_min,
+            conf_min=conf_consulta,
         )
-        inferencia_ms = (time.perf_counter() - t_inicio) * 1000.0
+        candidatos = estrategia_aux._reproyectar_candidatos(
+            cajas, recorte_total, conf_consulta
+        )
+        if rastreador is not None:
+            candidatos = rastreador.actualizar(candidatos)
 
         if cerco_referencia is not None and cerco_referencia.esta_cerrado:
-            estrategia_aux = EstrategiaCercoVirtual(conf_min=self._conf_min)
-            peatones = estrategia_aux.reproyectar_y_filtrar(
-                cajas, recorte_total, cerco_referencia
-            )
+            peatones = estrategia_aux._filtrar_en_poligono(candidatos, cerco_referencia)
         else:
-            inv_w = 1.0 / float(ancho_frame)
-            inv_h = 1.0 / float(alto_frame)
-            lista: List[DeteccionPeaton] = []
-            for c in cajas:
-                if int(c.clase_id) == _CLASE_PERSONA_COCO and float(c.confianza) >= self._conf_min:
-                    lista.append(
-                        DeteccionPeaton(
-                            x1=round(max(0.0, min(1.0, c.x1 * inv_w)), 6),
-                            y1=round(max(0.0, min(1.0, c.y1 * inv_h)), 6),
-                            x2=round(max(0.0, min(1.0, c.x2 * inv_w)), 6),
-                            y2=round(max(0.0, min(1.0, c.y2 * inv_h)), 6),
-                            confianza=round(float(c.confianza), 4),
-                            clase_id=_CLASE_PERSONA_COCO,
-                        )
-                    )
-            peatones = tuple(lista)
+            peatones = tuple(c for c in candidatos if c.confianza >= self._conf_min)
+        inferencia_ms = (time.perf_counter() - t_inicio) * 1000.0
 
         return ResultadoDeteccionROI(
             detecciones=peatones,

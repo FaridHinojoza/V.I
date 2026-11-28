@@ -1,14 +1,14 @@
-"""Puertos (Protocol) y objetos de valor de dominio para detección espacial en CPU y RAM.
+"""Puertos (Protocol) y objetos de valor de dominio para detección y seguimiento en CPU y RAM.
 
 Define las estructuras inmutables para el intercambio entre el adaptador de visión
-(Ultralytics YOLO en CPU) y las estrategias de aislamiento espacial del cerco virtual
-(US-04 / RF-07 / RNF-01 / RNF-02 / CP-04).
+(Ultralytics YOLO en CPU), el rastreador multi-objeto (ByteTrack) y las estrategias
+de aislamiento espacial del cerco virtual (US-04 / US-05 / RF-07 / RF-08 / RNF-01 / RNF-02).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, List, Protocol, Sequence, Tuple, runtime_checkable
+from typing import Any, Optional, Protocol, Sequence, Tuple, runtime_checkable
 
 
 @dataclass(frozen=True)
@@ -34,7 +34,7 @@ class CajaDeteccionCruda:
 
 @dataclass(frozen=True)
 class DeteccionPeaton:
-    """Representa una persona (class 0) detectada y validada dentro del cerco virtual.
+    """Representa una persona (class 0) detectada y opcionalmente rastreada en el cerco.
 
     Todas las coordenadas se almacenan normalizadas en el rango [0.0, 1.0] respecto al
     ancho y alto totales del fotograma original, desacoplando la geometría de dominio
@@ -47,6 +47,8 @@ class DeteccionPeaton:
         y2: Límite inferior normalizado [0.0, 1.0].
         confianza: Probabilidad estimada por YOLO [0.0, 1.0].
         clase_id: Clase detectada (invariante = 0 para peatones).
+        track_id: Identificador continuo asignado por ByteTrack en la sesión (US-05 / RF-08).
+        trayectoria: Secuencia cronológica de puntos (x, y) normalizados del recorrido.
     """
 
     x1: float
@@ -55,6 +57,8 @@ class DeteccionPeaton:
     y2: float
     confianza: float
     clase_id: int = 0
+    track_id: Optional[int] = None
+    trayectoria: Tuple[Tuple[float, float], ...] = ()
 
     @property
     def punto_pies(self) -> Tuple[float, float]:
@@ -82,10 +86,10 @@ class DeteccionPeaton:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        """Serializa la detección a un diccionario JSON para transmisión por WebSocket.
+        """Serializa la detección y su trayectoria a un diccionario JSON para WebSocket.
 
         Returns:
-            Diccionario con coordenadas normalizadas, punto de apoyo, centroide y confianza.
+            Diccionario con coordenadas normalizadas, ID de seguimiento, ruta y confianza.
         """
         pies_x, pies_y = self.punto_pies
         cx, cy = self.centroide
@@ -96,6 +100,10 @@ class DeteccionPeaton:
             "y2": round(self.y2, 4),
             "confianza": round(self.confianza, 4),
             "clase_id": self.clase_id,
+            "track_id": self.track_id,
+            "trayectoria": [
+                {"x": round(px, 4), "y": round(py, 4)} for px, py in self.trayectoria
+            ],
             "punto_pies": {"x": round(pies_x, 4), "y": round(pies_y, 4)},
             "centroide": {"x": round(cx, 4), "y": round(cy, 4)},
         }
@@ -106,8 +114,8 @@ class ResultadoDeteccionROI:
     """Encapsula el resultado de procesar un fotograma bajo una estrategia espacial en CPU.
 
     Attributes:
-        detecciones: Lista de peatones validados geométricamente dentro de la región activa.
-        inferencia_ms: Tiempo de ejecución del detector en milisegundos.
+        detecciones: Tupla de peatones validados (y rastreados si aplica) en la región activa.
+        inferencia_ms: Tiempo conjunto de ejecución (detector + rastreador) en milisegundos.
         area_cerco_pct: Porcentaje de la escena cubierto por el polígono activo.
         imgsz_usado: Resolución cuadrada (múltiplo de 32) empleada en la inferencia CPU.
         dispositivo: Dispositivo de ejecución utilizado (siempre 'cpu' por RNF-01).
@@ -123,7 +131,7 @@ class ResultadoDeteccionROI:
 
     @property
     def peatones_detectados(self) -> int:
-        """Cantidad total de personas detectadas dentro de la región delimitada."""
+        """Cantidad total de personas detectadas/rastreadas dentro de la región delimitada."""
         return len(self.detecciones)
 
     def to_dict(self) -> dict[str, Any]:
@@ -158,14 +166,28 @@ class IDetectorPeatones(Protocol):
         imgsz: int = 640,
         conf_min: float = 0.35,
     ) -> Sequence[CajaDeteccionCruda]:
-        """Ejecuta inferencia sobre una imagen o recorte ROI identificando solo personas.
+        """Ejecuta inferencia sobre una imagen o recorte ROI identificando solo personas."""
+        ...
+
+
+@runtime_checkable
+class IRastreadorPeatones(Protocol):
+    """Puerto de dominio para motores de seguimiento multi-objeto por sesión (US-05 / RF-08)."""
+
+    def actualizar(
+        self,
+        detecciones: Sequence[DeteccionPeaton],
+    ) -> Tuple[DeteccionPeaton, ...]:
+        """Asocia las detecciones actuales con pistas existentes y actualiza sus trayectorias.
 
         Args:
-            imagen: Matriz de imagen (recorte ROI o fotograma completo) en memoria RAM.
-            imgsz: Tamaño de entrada escalado (múltiplo de 32) para optimizar CPU.
-            conf_min: Umbral mínimo de confianza en [0.0, 1.0].
+            detecciones: Candidatos reproyectados en coordenadas globales [0.0, 1.0].
 
         Returns:
-            Secuencia de cajas detectadas en coordenadas de píxeles de la imagen recibida.
+            Tupla de `DeteccionPeaton` enriquecida con `track_id` y `trayectoria`.
         """
+        ...
+
+    def reiniciar(self) -> None:
+        """Limpia todas las pistas e historiales activos en memoria de la sesión."""
         ...

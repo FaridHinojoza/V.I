@@ -68,36 +68,54 @@
     }
   }
 
+  function actualizarCeldaMetrica(id, texto) {
+    var nodo = VI.byId(id);
+    if (nodo) { nodo.textContent = texto; }
+  }
+
   function actualizarMetricasDOM(metricas) {
     if (!metricas) { return; }
-    var metricNodes = document.querySelectorAll(".metric-value");
-    if (metricNodes.length < 6) { return; }
-    if (metricas.fps !== undefined) { metricNodes[0].textContent = Number(metricas.fps).toFixed(1) + " FPS"; }
-    if (metricas.inferencia_ms !== undefined) { metricNodes[1].textContent = Number(metricas.inferencia_ms).toFixed(1) + " ms"; }
-    if (metricas.area_cerco_pct !== undefined) { metricNodes[2].textContent = Number(metricas.area_cerco_pct).toFixed(1) + " %"; }
-    if (metricas.cpu_pct !== undefined) { metricNodes[3].textContent = Number(metricas.cpu_pct).toFixed(1) + " %"; }
-    if (metricas.ram_mb !== undefined) { metricNodes[4].textContent = Number(metricas.ram_mb).toFixed(0) + " MB"; }
+    if (metricas.fps !== undefined) {
+      actualizarCeldaMetrica("metric-fps", Number(metricas.fps).toFixed(1) + " FPS");
+    }
+    if (metricas.inferencia_ms !== undefined) {
+      actualizarCeldaMetrica("metric-ms", Number(metricas.inferencia_ms).toFixed(1) + " ms");
+    }
+    if (metricas.area_cerco_pct !== undefined) {
+      actualizarCeldaMetrica("metric-area", Number(metricas.area_cerco_pct).toFixed(1) + " %");
+    }
+    if (metricas.cpu_pct !== undefined) {
+      actualizarCeldaMetrica("metric-cpu", Number(metricas.cpu_pct).toFixed(1) + " %");
+    }
+    if (metricas.ram_mb !== undefined) {
+      actualizarCeldaMetrica("metric-ram", Number(metricas.ram_mb).toFixed(0) + " MB");
+    }
+    if (metricas.gpu_pct !== undefined) {
+      actualizarCeldaMetrica("metric-gpu", Number(metricas.gpu_pct).toFixed(1) + " %");
+    }
+    if (metricas.ancho_banda_kbs !== undefined) {
+      actualizarCeldaMetrica("metric-bw", Number(metricas.ancho_banda_kbs).toFixed(1) + " KB/s");
+    }
     if (metricas.peatones !== undefined && metricas.alertas !== undefined) {
-      metricNodes[5].textContent = metricas.peatones + " / " + metricas.alertas;
+      actualizarCeldaMetrica("metric-conteo", metricas.peatones + " / " + metricas.alertas);
     }
   }
 
   function actualizarMetricaArea(porcentaje) {
-    var metricNodes = document.querySelectorAll(".metric-value");
-    if (metricNodes.length >= 3 && porcentaje !== undefined) {
-      metricNodes[2].textContent = Number(porcentaje).toFixed(1) + " %";
+    if (porcentaje !== undefined) {
+      actualizarCeldaMetrica("metric-area", Number(porcentaje).toFixed(1) + " %");
     }
   }
 
   function reiniciarMetricasDOM() {
-    var metricNodes = document.querySelectorAll(".metric-value");
-    if (metricNodes.length < 6) { return; }
-    metricNodes[0].textContent = "-- FPS";
-    metricNodes[1].textContent = "-- ms";
-    metricNodes[2].textContent = "-- %";
-    metricNodes[3].textContent = "-- %";
-    metricNodes[4].textContent = "-- MB";
-    metricNodes[5].textContent = "0 / 0";
+    actualizarCeldaMetrica("metric-fps", "-- FPS");
+    actualizarCeldaMetrica("metric-ms", "-- ms");
+    actualizarCeldaMetrica("metric-area", "-- %");
+    actualizarCeldaMetrica("metric-cpu", "-- %");
+    actualizarCeldaMetrica("metric-ram", "-- MB");
+    actualizarCeldaMetrica("metric-gpu", "-- %");
+    actualizarCeldaMetrica("metric-bw", "-- KB/s");
+    actualizarCeldaMetrica("metric-conteo", "0 / 0");
   }
 
   var cercoCtrl = window.VICerco.crearControladorCerco({
@@ -125,13 +143,23 @@
     if (esperandoDeteccion) { return; }
     if (!mediaStream || !mediaStream.active || !videoElement) { return; }
     if (!socket || socket.readyState !== WebSocket.OPEN) { return; }
-    if (!cercoCtrl.estaCerradoOEditando()) { return; }
-    if (!captureCanvas || !captureCtx) { return; }
 
     var vw = videoElement.videoWidth || 640;
     var vh = videoElement.videoHeight || 480;
     if (vw <= 0 || vh <= 0) { return; }
 
+    if (!cercoCtrl.estaCerradoOEditando()) {
+      esperandoDeteccion = true;
+      socket.send(JSON.stringify({
+        tipo: "procesar_frame",
+        frame_b64: "",
+        ancho: vw,
+        alto: vh
+      }));
+      return;
+    }
+
+    if (!captureCanvas || !captureCtx) { return; }
     captureCanvas.width = vw;
     captureCanvas.height = vh;
     try {
@@ -243,12 +271,16 @@
       esperandoDeteccion = false;
       deteccionesActivas = Array.isArray(data.detecciones) ? data.detecciones : [];
       cercoCtrl.actualizarDetecciones(deteccionesActivas);
-      actualizarMetricasDOM({
-        inferencia_ms: data.inferencia_ms,
-        area_cerco_pct: data.area_cerco_pct,
-        peatones: data.peatones_detectados !== undefined ? data.peatones_detectados : deteccionesActivas.length,
-        alertas: 0
-      });
+      if (data.metricas) {
+        actualizarMetricasDOM(data.metricas);
+      } else {
+        actualizarMetricasDOM({
+          inferencia_ms: data.inferencia_ms,
+          area_cerco_pct: data.area_cerco_pct,
+          peatones: data.peatones_detectados !== undefined ? data.peatones_detectados : deteccionesActivas.length,
+          alertas: 0
+        });
+      }
       return;
     }
 
